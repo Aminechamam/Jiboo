@@ -19,7 +19,7 @@ export function Header() {
           </span>
         </Link>
 
-        <nav className="flex items-center gap-6 text-sm font-bold uppercase tracking-wide text-tn-white">
+        <nav className="flex items-center gap-3 text-xs font-bold uppercase tracking-wide text-tn-white sm:gap-6 sm:text-sm">
           <Link href="/" className="transition-colors duration-200 hover:text-tn-amber">
             Accueil
           </Link>
@@ -33,9 +33,10 @@ export function Header() {
             type="button"
             onClick={toggleCart}
             aria-haspopup="dialog"
-            className="relative hidden rounded-lg bg-tn-red px-4 py-2 text-xs font-black uppercase tracking-wide text-tn-white transition-all duration-200 hover:scale-105 hover:bg-tn-amber hover:text-tn-black sm:block"
+            className="relative rounded-lg bg-tn-red px-3 py-1.5 text-[11px] font-black uppercase tracking-wide text-tn-white transition-all duration-200 hover:scale-105 hover:bg-tn-amber hover:text-tn-black sm:px-4 sm:py-2 sm:text-xs"
           >
-            Mon panier
+            <span className="sm:hidden">Panier</span>
+            <span className="hidden sm:inline">Mon panier</span>
             {itemCount > 0 && (
               <span className="absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full border-2 border-tn-black bg-tn-amber text-[10px] font-black text-tn-black">
                 {itemCount}

@@ -61,24 +61,32 @@ export function ProductCard({
           />
         </div>
 
-        <div className="flex flex-1 flex-col gap-2 px-4">
-          <span className="w-fit rounded-full bg-tn-offwhite px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-tn-black-soft">
+        <div className="flex flex-1 flex-col gap-1.5 px-3 sm:gap-2 sm:px-4">
+          <span className="w-fit rounded-full bg-tn-offwhite px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-tn-black-soft sm:text-[11px]">
             {product.category?.name ?? "Autre"}
           </span>
-          <h3 className="text-base font-extrabold uppercase leading-snug tracking-wide text-tn-black">
+          <h3 className="text-sm font-extrabold uppercase leading-snug tracking-wide text-tn-black sm:text-base">
             {product.name}
           </h3>
-          <p className="text-sm text-tn-black-soft/80">{product.compatibility}</p>
-          <p className="text-xs text-tn-black-soft/60">Réf. {product.reference}</p>
-          <p className="line-clamp-2 text-sm text-tn-black-soft">{product.description}</p>
+          <p className="hidden text-sm text-tn-black-soft/80 sm:block">
+            {product.compatibility}
+          </p>
+          <p className="hidden text-xs text-tn-black-soft/60 sm:block">
+            Réf. {product.reference}
+          </p>
+          <p className="line-clamp-2 hidden text-sm text-tn-black-soft sm:block">
+            {product.description}
+          </p>
         </div>
       </Link>
 
-      <div className="flex flex-col px-4 pb-4">
-        <div className="mt-auto flex items-center justify-between pt-2">
-          <span className="text-xl font-black text-tn-red">{formatPrice(product.price)}</span>
+      <div className="flex flex-col px-3 pb-3 sm:px-4 sm:pb-4">
+        <div className="mt-auto flex flex-col gap-2 pt-2">
+          <span className="text-lg font-black text-tn-red sm:text-xl">
+            {formatPrice(product.price)}
+          </span>
           {outOfStock ? (
-            <span className="cursor-not-allowed rounded-lg bg-tn-black-soft/20 px-3 py-2 text-xs font-black uppercase tracking-wide text-tn-black-soft/50">
+            <span className="w-full cursor-not-allowed rounded-lg bg-tn-black-soft/20 px-3 py-2 text-center text-xs font-black uppercase tracking-wide text-tn-black-soft/50">
               Rupture de stock
             </span>
           ) : (
@@ -86,7 +94,7 @@ export function ProductCard({
               key={pulseKey}
               href="#"
               onClick={handleAdd}
-              className={`rounded-lg bg-tn-black px-3 py-2 text-xs font-black uppercase tracking-wide text-tn-white transition-all duration-200 hover:scale-105 hover:bg-tn-red active:scale-95 ${
+              className={`w-full rounded-lg bg-tn-black px-3 py-2 text-center text-xs font-black uppercase tracking-wide text-tn-white transition-all duration-200 hover:scale-105 hover:bg-tn-red active:scale-95 ${
                 pulseKey > 0
                   ? "motion-safe:[animation:tn-add-bump_320ms_cubic-bezier(0.34,1.56,0.64,1)]"
                   : ""
