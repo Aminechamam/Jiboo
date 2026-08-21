@@ -84,7 +84,9 @@ export default function CommandePage() {
       const messageLines = [
         `Bonjour Jiboo, je confirme ma commande ${result.trackingReference} :`,
         "",
-        ...items.map((i) => `- ${i.quantity}x ${i.name} (${formatPrice(i.price)})`),
+        ...items.map(
+          (i) => `- ${i.quantity}x ${i.name} — Réf. ${i.reference} (${formatPrice(i.price)})`
+        ),
         "",
         `Sous-total: ${formatPrice(result.subtotal)}`,
         `Livraison${selectedZone ? ` (${selectedZone.name})` : ""}: ${formatPrice(
@@ -95,7 +97,7 @@ export default function CommandePage() {
         `Nom: ${trimmedName}`,
         `Téléphone: ${trimmedPhone}`,
         `Adresse: ${trimmedAddress}`,
-        `Référence: ${result.trackingReference}`,
+        `Référence commande: ${result.trackingReference}`,
       ];
 
       const url = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(
