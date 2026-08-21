@@ -44,7 +44,7 @@ export default function Home() {
     };
   }, []);
 
-  const popularProducts = products.slice(0, 6);
+  const popularProducts = products.slice(0, 8);
 
   return (
     <>
@@ -126,7 +126,7 @@ export default function Home() {
 
             {loading ? (
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-6 lg:grid-cols-4">
-                {Array.from({ length: 6 }).map((_, i) => (
+                {Array.from({ length: 8 }).map((_, i) => (
                   <div
                     key={i}
                     className="h-80 animate-pulse rounded-xl border-2 border-tn-black/10 bg-tn-white"
