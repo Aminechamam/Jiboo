@@ -1,11 +1,24 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import { useCart } from "./CartContext";
 import { formatPrice } from "@/lib/supabase";
 
 export function CartDrawer() {
   const { items, isOpen, closeCart, removeItem, updateQuantity, subtotal } = useCart();
+
+  // Lock background scroll while the drawer is open — without this, the page
+  // behind keeps scrolling under the drawer on mobile (visible in the gap
+  // left by the browser's dynamic address bar), which reads as broken.
+  useEffect(() => {
+    if (!isOpen) return;
+    const { overflow } = document.body.style;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = overflow;
+    };
+  }, [isOpen]);
 
   return (
     <>
@@ -21,7 +34,7 @@ export function CartDrawer() {
         aria-modal="true"
         aria-label="Panier"
         aria-hidden={!isOpen}
-        className={`fixed right-0 top-0 z-50 flex h-full w-full max-w-sm flex-col border-l-4 border-tn-black bg-tn-white transition-transform duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] ${
+        className={`fixed inset-y-0 right-0 z-50 flex h-[100dvh] w-full max-w-sm flex-col overscroll-contain border-l-4 border-tn-black bg-tn-white transition-transform duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] ${
           isOpen ? "translate-x-0" : "translate-x-full"
         }`}
       >
