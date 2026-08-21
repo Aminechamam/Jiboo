@@ -1,0 +1,464 @@
+// Admin-only product management (CRUD + CSV bulk import) against the same
+// Supabase project as the public site, via PostgREST.
+//
+// IMPORTANT: same rule as lib/supabase.ts, lib/admin-auth.ts and
+// lib/admin-data.ts — every export here must only ever be called from
+// client-side code ("use client" components, inside useEffect/event
+// handlers), never from a Server Component or at module scope, since
+// `next build` runs network-sandboxed here.
+//
+// Reads of the product/category lists reuse the existing public
+// fetchProducts()/fetchCategories() from lib/supabase.ts (products/categories
+// are publicly readable — RLS only restricts writes). Every write below is
+// authenticated with the signed-in admin's own access token (see
+// authedHeaders in lib/admin-auth.ts) so Postgres RLS resolves auth.uid() to
+// that user.
+
+import { SUPABASE_URL, type Category } from "./supabase";
+import { authedHeaders } from "./admin-auth";
+import { SessionExpiredError } from "./admin-data";
+
+// Re-exported so pages that only touch this file don't also need to import
+// directly from lib/admin-data.ts for the common "session died mid-action"
+// case.
+export { SessionExpiredError };
+
+async function parseErrorMessage(res: Response, fallback: string): Promise<string> {
+  try {
+    const data = (await res.json()) as { message?: string; msg?: string };
+    return data.message ?? data.msg ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Single-product create / update
+// ---------------------------------------------------------------------------
+
+export type ProductPatch = Partial<{
+  reference: string;
+  name: string;
+  description: string;
+  price: number;
+  stock: number;
+  category_id: string | null;
+  photo_url: string | null;
+}>;
+
+export async function updateProduct(
+  accessToken: string,
+  id: string,
+  patch: ProductPatch
+): Promise<void> {
+  const url = `${SUPABASE_URL}/rest/v1/products?id=eq.${id}`;
+  const res = await fetch(url, {
+    method: "PATCH",
+    headers: {
+      ...authedHeaders(accessToken),
+      "Content-Type": "application/json",
+      Prefer: "return=minimal",
+    },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) {
+    if (res.status === 401) throw new SessionExpiredError();
+    throw new Error(await parseErrorMessage(res, "Impossible de mettre à jour le produit."));
+  }
+}
+
+export type ProductInput = {
+  reference: string;
+  name: string;
+  description: string;
+  price: number;
+  stock: number;
+  category_id: string | null;
+  photo_url: string | null;
+};
+
+/** Raw columns PostgREST hands back for a POST with
+ *  `Prefer: return=representation` — no joined relations, just the inserted
+ *  row itself. Callers that need a display-ready `Product` (with a resolved
+ *  `Category` object) build one client-side by looking `category_id` up in
+ *  an already-fetched category list. */
+export type CreatedProductRow = {
+  id: string;
+  reference: string;
+  name: string;
+  description: string;
+  price: number;
+  stock: number;
+  category_id: string | null;
+  photo_url: string | null;
+  low_stock_threshold: number;
+};
+
+export async function createProduct(
+  accessToken: string,
+  data: ProductInput
+): Promise<CreatedProductRow> {
+  const url = `${SUPABASE_URL}/rest/v1/products`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      ...authedHeaders(accessToken),
+      "Content-Type": "application/json",
+      Prefer: "return=representation",
+    },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    if (res.status === 401) throw new SessionExpiredError();
+    throw new Error(await parseErrorMessage(res, "Impossible de créer le produit."));
+  }
+  const rows = (await res.json()) as {
+    id: string;
+    reference: string;
+    name: string;
+    description: string;
+    price: string | number;
+    stock: number;
+    category_id: string | null;
+    photo_url: string | null;
+    low_stock_threshold: number;
+  }[];
+  const row = rows[0];
+  if (!row) throw new Error("Réponse invalide du serveur lors de la création du produit.");
+  return {
+    id: row.id,
+    reference: row.reference,
+    name: row.name,
+    description: row.description,
+    price: Number(row.price),
+    stock: row.stock,
+    category_id: row.category_id,
+    photo_url: row.photo_url,
+    low_stock_threshold: row.low_stock_threshold,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Delete
+// ---------------------------------------------------------------------------
+
+/** How many order_items (customer orders) reference this product — shown to
+ *  the admin before a delete so the confirmation is informative rather than
+ *  a blind "are you sure?". This is purely informational: order_items.
+ *  product_id is ON DELETE SET NULL and the row already snapshots
+ *  product_name/product_reference/unit_price/line_total at order time, so
+ *  deleting the product can never break the display of past orders — the
+ *  count just lets the admin make a deliberate choice, it doesn't block
+ *  anything. */
+export async function countProductOrders(accessToken: string, productId: string): Promise<number> {
+  const url = `${SUPABASE_URL}/rest/v1/order_items?product_id=eq.${productId}&select=id`;
+  const res = await fetch(url, {
+    method: "HEAD",
+    headers: { ...authedHeaders(accessToken), Prefer: "count=exact" },
+  });
+  if (!res.ok) {
+    if (res.status === 401) throw new SessionExpiredError();
+    return 0; // Best-effort — a failed count shouldn't block the delete flow.
+  }
+  const range = res.headers.get("content-range"); // e.g. "*/5" or "0-4/5"
+  const total = range?.split("/")[1];
+  return total && total !== "*" ? Number(total) : 0;
+}
+
+export async function deleteProduct(accessToken: string, id: string): Promise<void> {
+  const url = `${SUPABASE_URL}/rest/v1/products?id=eq.${id}`;
+  const res = await fetch(url, {
+    method: "DELETE",
+    headers: { ...authedHeaders(accessToken), Prefer: "return=minimal" },
+  });
+  if (!res.ok) {
+    if (res.status === 401) throw new SessionExpiredError();
+    throw new Error(await parseErrorMessage(res, "Impossible de supprimer le produit."));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Category find-or-create (used by CSV import — categories are matched by
+// name, case-insensitively, against an already-fetched list; if none match a
+// new one is created via the categories_write_staff RLS policy).
+// ---------------------------------------------------------------------------
+
+export async function findOrCreateCategory(
+  accessToken: string,
+  name: string,
+  existingCategories: Category[]
+): Promise<Category> {
+  const trimmed = name.trim();
+  const match = existingCategories.find(
+    (c) => c.name.trim().toLowerCase() === trimmed.toLowerCase()
+  );
+  if (match) return match;
+
+  const url = `${SUPABASE_URL}/rest/v1/categories`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      ...authedHeaders(accessToken),
+      "Content-Type": "application/json",
+      Prefer: "return=representation",
+    },
+    body: JSON.stringify({ name: trimmed }),
+  });
+  if (!res.ok) {
+    if (res.status === 401) throw new SessionExpiredError();
+    throw new Error(
+      await parseErrorMessage(res, `Impossible de créer la catégorie "${trimmed}".`)
+    );
+  }
+  const rows = (await res.json()) as { id: string; name: string }[];
+  const row = rows[0];
+  if (!row) {
+    throw new Error(`Réponse invalide du serveur lors de la création de la catégorie "${trimmed}".`);
+  }
+  return { id: row.id, name: row.name };
+}
+
+// ---------------------------------------------------------------------------
+// CSV parsing — hand-written, no external library (offline install, none
+// available). Handles quoted fields (commas/newlines inside quotes, ""
+// escaping for a literal quote) which is enough for a straightforward
+// RFC4180-ish product export/import file; it does not need to be bulletproof
+// against every conceivable edge case.
+// ---------------------------------------------------------------------------
+
+function parseCsvTable(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let inQuotes = false;
+  let i = 0;
+  const len = text.length;
+
+  while (i < len) {
+    const char = text[i];
+
+    if (inQuotes) {
+      if (char === '"') {
+        if (text[i + 1] === '"') {
+          field += '"';
+          i += 2;
+          continue;
+        }
+        inQuotes = false;
+        i += 1;
+        continue;
+      }
+      field += char;
+      i += 1;
+      continue;
+    }
+
+    if (char === '"') {
+      inQuotes = true;
+      i += 1;
+      continue;
+    }
+    if (char === ",") {
+      row.push(field);
+      field = "";
+      i += 1;
+      continue;
+    }
+    if (char === "\r") {
+      // Normalized via the following \n (or a lone trailing \r, ignored).
+      i += 1;
+      continue;
+    }
+    if (char === "\n") {
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = "";
+      i += 1;
+      continue;
+    }
+    field += char;
+    i += 1;
+  }
+
+  // Final field/row if the file doesn't end with a trailing newline.
+  if (field.length > 0 || row.length > 0) {
+    row.push(field);
+    rows.push(row);
+  }
+
+  // Drop fully-blank lines (e.g. a trailing empty line at EOF).
+  return rows.filter((r) => !(r.length === 1 && r[0].trim() === ""));
+}
+
+export type CsvImportRow = {
+  /** 1-based line number in the source file (header is line 1), used to
+   *  point the admin at the exact offending row in any error message. */
+  row: number;
+  reference: string;
+  name: string;
+  description: string;
+  price: number;
+  stock: number;
+  categoryName: string;
+  photoUrl: string | null;
+};
+
+export type RowIssue = {
+  row: number;
+  reference?: string;
+  reason: string;
+};
+
+export type ParseCsvResult = {
+  rows: CsvImportRow[];
+  errors: RowIssue[];
+};
+
+const REQUIRED_HEADERS = ["reference", "name", "price", "stock", "category"] as const;
+
+/** Expected header row, shown in the admin UI hint block. */
+export const CSV_EXPECTED_HEADER = "reference,name,description,price,stock,category,photo_url";
+
+export function parseProductsCsv(text: string): ParseCsvResult {
+  const table = parseCsvTable(text);
+
+  if (table.length === 0) {
+    return { rows: [], errors: [{ row: 0, reason: "Fichier vide." }] };
+  }
+
+  const headerRow = table[0].map((h) => h.trim().toLowerCase());
+  const colIndex = (name: string) => headerRow.indexOf(name);
+
+  const missing = REQUIRED_HEADERS.filter((h) => colIndex(h) === -1);
+  if (missing.length > 0) {
+    return {
+      rows: [],
+      errors: [
+        {
+          row: 1,
+          reason: `Colonnes manquantes dans l'en-tête : ${missing.join(", ")}. Attendu : ${CSV_EXPECTED_HEADER}`,
+        },
+      ],
+    };
+  }
+
+  const idx = {
+    reference: colIndex("reference"),
+    name: colIndex("name"),
+    description: colIndex("description"),
+    price: colIndex("price"),
+    stock: colIndex("stock"),
+    category: colIndex("category"),
+    photoUrl: colIndex("photo_url"),
+  };
+
+  const rows: CsvImportRow[] = [];
+  const errors: RowIssue[] = [];
+
+  for (let i = 1; i < table.length; i += 1) {
+    const raw = table[i];
+    const rowNumber = i + 1;
+    if (raw.length === 1 && raw[0].trim() === "") continue;
+
+    const reference = (raw[idx.reference] ?? "").trim();
+    const name = (raw[idx.name] ?? "").trim();
+    const description = idx.description >= 0 ? (raw[idx.description] ?? "").trim() : "";
+    const priceRaw = (raw[idx.price] ?? "").trim();
+    const stockRaw = (raw[idx.stock] ?? "").trim();
+    const categoryName = (raw[idx.category] ?? "").trim();
+    const photoUrl = idx.photoUrl >= 0 ? (raw[idx.photoUrl] ?? "").trim() || null : null;
+
+    if (!reference || !name) {
+      errors.push({ row: rowNumber, reference, reason: "Référence et nom sont obligatoires." });
+      continue;
+    }
+
+    const price = Number(priceRaw);
+    if (!Number.isFinite(price) || price < 0) {
+      errors.push({ row: rowNumber, reference, reason: `Prix invalide : "${priceRaw}".` });
+      continue;
+    }
+
+    const stock = Number(stockRaw);
+    if (!Number.isInteger(stock) || stock < 0) {
+      errors.push({ row: rowNumber, reference, reason: `Stock invalide : "${stockRaw}".` });
+      continue;
+    }
+
+    rows.push({ row: rowNumber, reference, name, description, price, stock, categoryName, photoUrl });
+  }
+
+  return { rows, errors };
+}
+
+// ---------------------------------------------------------------------------
+// Bulk import — sequential, one row at a time, so a single bad/duplicate row
+// (e.g. duplicate `reference`, which is UNIQUE) doesn't abort the whole
+// batch. Each row's error is caught individually.
+// ---------------------------------------------------------------------------
+
+export type ImportSummary = {
+  successCount: number;
+  failures: RowIssue[];
+};
+
+/** Turns a raw PostgREST/Postgres error message into a short, friendlier
+ *  French reason for the per-row import summary — falls back to the raw
+ *  message when it doesn't recognize the shape. */
+function describeImportError(message: string): string {
+  if (/duplicate key|already exists|unique constraint/i.test(message)) {
+    return "Référence déjà existante.";
+  }
+  if (/violates check constraint/i.test(message)) {
+    return "Valeur invalide (prix ou stock négatif ?).";
+  }
+  if (/violates not-null constraint/i.test(message)) {
+    return "Champ obligatoire manquant.";
+  }
+  return message;
+}
+
+export async function bulkImportProducts(
+  accessToken: string,
+  rows: CsvImportRow[],
+  categories: Category[],
+  onProgress?: (done: number, total: number) => void
+): Promise<ImportSummary> {
+  const workingCategories = [...categories];
+  const failures: RowIssue[] = [];
+  let successCount = 0;
+
+  for (let i = 0; i < rows.length; i += 1) {
+    const row = rows[i];
+    try {
+      let categoryId: string | null = null;
+      if (row.categoryName) {
+        const category = await findOrCreateCategory(accessToken, row.categoryName, workingCategories);
+        if (!workingCategories.some((c) => c.id === category.id)) {
+          workingCategories.push(category);
+        }
+        categoryId = category.id;
+      }
+
+      await createProduct(accessToken, {
+        reference: row.reference,
+        name: row.name,
+        description: row.description,
+        price: row.price,
+        stock: row.stock,
+        category_id: categoryId,
+        photo_url: row.photoUrl,
+      });
+      successCount += 1;
+    } catch (err) {
+      if (err instanceof SessionExpiredError) throw err;
+      const message = err instanceof Error ? err.message : "Erreur inconnue.";
+      failures.push({ row: row.row, reference: row.reference, reason: describeImportError(message) });
+    } finally {
+      onProgress?.(i + 1, rows.length);
+    }
+  }
+
+  return { successCount, failures };
+}

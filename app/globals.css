@@ -1,0 +1,118 @@
+@import "tailwindcss";
+
+:root {
+  --tn-red: #e6371b;
+  --tn-red-dark: #b8280f;
+  --tn-black: #111214;
+  --tn-black-soft: #1c1d20;
+  --tn-amber: #ffcc00;
+  --tn-white: #ffffff;
+  --tn-offwhite: #f5f4f2;
+}
+
+@theme inline {
+  --color-tn-red: var(--tn-red);
+  --color-tn-red-dark: var(--tn-red-dark);
+  --color-tn-black: var(--tn-black);
+  --color-tn-black-soft: var(--tn-black-soft);
+  --color-tn-amber: var(--tn-amber);
+  --color-tn-white: var(--tn-white);
+  --color-tn-offwhite: var(--tn-offwhite);
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+}
+
+body {
+  font-family: var(--font-sans);
+}
+
+/* Diagonal section divider: skewed block used before/after full-bleed sections */
+.tn-diagonal-top {
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 0 calc(100% - 3.5vw));
+}
+
+.tn-diagonal-bottom {
+  clip-path: polygon(0 3.5vw, 100% 0, 100% 100%, 0 100%);
+}
+
+.tn-diagonal-both {
+  clip-path: polygon(0 3vw, 100% 0, 100% calc(100% - 3vw), 0 100%);
+}
+
+/* Racing stripe accent strip — pure CSS repeating diagonal stripes */
+.tn-stripes {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    var(--tn-amber) 0,
+    var(--tn-amber) 14px,
+    var(--tn-black) 14px,
+    var(--tn-black) 28px
+  );
+}
+
+.tn-stripes-red {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    var(--tn-red) 0,
+    var(--tn-red) 14px,
+    transparent 14px,
+    transparent 28px
+  );
+}
+
+/* Angled ribbon badge */
+.tn-ribbon {
+  clip-path: polygon(8% 0, 100% 0, 92% 100%, 0% 100%);
+}
+
+/* Forces GPU compositing on every clip-path shape used for the diagonal
+   dividers/ribbons above. Without this, Chromium/WebKit can leave a
+   sub-pixel anti-aliasing seam (a thin stray line) along the clip edge,
+   especially where the shape sits flush against a same-color background. */
+.tn-diagonal-top,
+.tn-diagonal-bottom,
+.tn-diagonal-both,
+.tn-ribbon {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+/* Entrance keyframes — used with the Tailwind `motion-safe:` variant so
+   prefers-reduced-motion users simply get the final state with no animation. */
+@keyframes tn-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes tn-card-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Quick confirmation pulse — played once on the "Ajouter au panier" button
+   when an item is added, reusing the same bouncy spring curve as the
+   catalogue's filter chips/sort dropdown. */
+@keyframes tn-add-bump {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.15);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
