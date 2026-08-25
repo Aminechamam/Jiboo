@@ -17,13 +17,7 @@ import {
 // sometimes nothing visible at all) that stops scripted brute-force login
 // attempts regardless of the client-side attempt counter below.
 //
-// TODO(Amine): replace with your real site key from
-// https://dash.cloudflare.com/?to=/:account/turnstile (free). Until you do,
-// requestToken() below still runs — Supabase just ignores the empty/invalid
-// token because captcha enforcement isn't turned on for the project yet.
-// To actually require it, also paste the matching SECRET key into the
-// Supabase dashboard: Authentication > Settings > Bot and Abuse Protection.
-const TURNSTILE_SITE_KEY = "1x00000000000000000000AA";
+const TURNSTILE_SITE_KEY = "0x4AAAAAAEb3yCBibf-BrpNq";
 
 declare global {
   interface Window {
