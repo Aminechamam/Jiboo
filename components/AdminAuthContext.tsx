@@ -29,7 +29,7 @@ const REFRESH_CHECK_INTERVAL_MS = 20 * 1000;
 type AdminAuthContextValue = {
   session: AdminSession | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, captchaToken?: string) => Promise<void>;
   logout: () => void;
 };
 
@@ -90,8 +90,8 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(interval);
   }, [session]);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const fresh = await loginAdmin(email, password);
+  const login = useCallback(async (email: string, password: string, captchaToken?: string) => {
+    const fresh = await loginAdmin(email, password, captchaToken);
     storeSession(fresh);
     resetLoginAttempts();
     setSession(fresh);

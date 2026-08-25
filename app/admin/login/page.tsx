@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
+import Script from "next/script";
 import { useRouter } from "next/navigation";
 import { useAdminAuth } from "@/components/AdminAuthContext";
 import { Spinner } from "@/components/Spinner";
@@ -11,6 +12,35 @@ import {
   recordFailedLoginAttempt,
   type LoginLockState,
 } from "@/lib/admin-auth";
+
+// Cloudflare Turnstile — a low-friction captcha (usually a single checkbox,
+// sometimes nothing visible at all) that stops scripted brute-force login
+// attempts regardless of the client-side attempt counter below.
+//
+// TODO(Amine): replace with your real site key from
+// https://dash.cloudflare.com/?to=/:account/turnstile (free). Until you do,
+// requestToken() below still runs — Supabase just ignores the empty/invalid
+// token because captcha enforcement isn't turned on for the project yet.
+// To actually require it, also paste the matching SECRET key into the
+// Supabase dashboard: Authentication > Settings > Bot and Abuse Protection.
+const TURNSTILE_SITE_KEY = "1x00000000000000000000AA";
+
+declare global {
+  interface Window {
+    turnstile?: {
+      render: (
+        container: HTMLElement,
+        options: {
+          sitekey: string;
+          callback: (token: string) => void;
+          "expired-callback"?: () => void;
+          "error-callback"?: () => void;
+        }
+      ) => string;
+      reset: (widgetId?: string) => void;
+    };
+  }
+}
 
 function formatRemaining(ms: number): string {
   const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
@@ -28,6 +58,10 @@ export default function AdminLoginPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lockState, setLockState] = useState<LoginLockState>({ locked: false, remainingMs: 0 });
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [turnstileScriptReady, setTurnstileScriptReady] = useState(false);
+  const turnstileContainerRef = useRef<HTMLDivElement>(null);
+  const turnstileWidgetIdRef = useRef<string | null>(null);
 
   // Already-locked-out state can persist across a page reload (it lives in
   // localStorage), so re-derive it on mount, then tick once a second while
@@ -52,6 +86,20 @@ export default function AdminLoginPage() {
     }
   }, [loading, session, router]);
 
+  // Render the Turnstile widget once its script has loaded — explicit
+  // rendering (rather than the auto-render div) so we can reset it below
+  // after a failed attempt, since each token is single-use.
+  useEffect(() => {
+    if (!turnstileScriptReady || !window.turnstile || !turnstileContainerRef.current) return;
+    if (turnstileWidgetIdRef.current) return;
+    turnstileWidgetIdRef.current = window.turnstile.render(turnstileContainerRef.current, {
+      sitekey: TURNSTILE_SITE_KEY,
+      callback: (token) => setCaptchaToken(token),
+      "expired-callback": () => setCaptchaToken(null),
+      "error-callback": () => setCaptchaToken(null),
+    });
+  }, [turnstileScriptReady]);
+
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (isSubmitting || lockState.locked) return;
@@ -60,12 +108,18 @@ export default function AdminLoginPage() {
     setError(null);
 
     try {
-      await login(email.trim(), password);
+      await login(email.trim(), password, captchaToken ?? undefined);
       router.push("/admin");
     } catch (err) {
       recordFailedLoginAttempt();
       setLockState(getLoginLockState());
       setError(err instanceof AdminAuthError ? err.message : "Email ou mot de passe incorrect.");
+      // Tokens are single-use — reset the widget so the next attempt gets a
+      // fresh one instead of silently failing captcha verification.
+      if (window.turnstile && turnstileWidgetIdRef.current) {
+        window.turnstile.reset(turnstileWidgetIdRef.current);
+      }
+      setCaptchaToken(null);
     } finally {
       setIsSubmitting(false);
     }
@@ -132,9 +186,11 @@ export default function AdminLoginPage() {
             </p>
           )}
 
+          {!lockState.locked && <div ref={turnstileContainerRef} />}
+
           <button
             type="submit"
-            disabled={isSubmitting || lockState.locked}
+            disabled={isSubmitting || lockState.locked || !captchaToken}
             className="mt-2 flex items-center justify-center gap-2 rounded-lg bg-tn-red px-6 py-3 text-sm font-black uppercase tracking-wide text-tn-white transition-all duration-200 hover:scale-105 hover:bg-tn-amber hover:text-tn-black active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100 disabled:hover:bg-tn-red disabled:hover:text-tn-white"
           >
             {isSubmitting && <Spinner className="size-4" />}
@@ -146,6 +202,13 @@ export default function AdminLoginPage() {
           </button>
         </form>
       </div>
+
+      <Script
+        src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+        async
+        defer
+        onLoad={() => setTurnstileScriptReady(true)}
+      />
     </div>
   );
 }

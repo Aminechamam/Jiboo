@@ -177,14 +177,24 @@ function extractErrorMessage(data: unknown): string | null {
   return null;
 }
 
-async function requestToken(body: Record<string, string>, grantType: string): Promise<GoTrueTokenResponse> {
+async function requestToken(
+  body: Record<string, string>,
+  grantType: string,
+  captchaToken?: string
+): Promise<GoTrueTokenResponse> {
   const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=${grantType}`, {
     method: "POST",
     headers: {
       apikey: SUPABASE_ANON_KEY,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(body),
+    // GoTrue only looks at gotrue_meta_security.captcha_token when captcha
+    // protection is turned on for the project (Supabase dashboard > Auth >
+    // Bot and Abuse Protection). Until that's configured there, this field
+    // is simply ignored — safe to always send.
+    body: JSON.stringify(
+      captchaToken ? { ...body, gotrue_meta_security: { captcha_token: captchaToken } } : body
+    ),
   });
 
   let data: unknown = null;
@@ -225,8 +235,12 @@ async function fetchOwnProfile(accessToken: string, userId: string): Promise<Raw
  *  including a successfully authenticated non-admin account, which must be
  *  rejected here since this panel is admin-only. Never reveals whether the
  *  rejection was due to the email not existing vs. a wrong password. */
-export async function loginAdmin(email: string, password: string): Promise<AdminSession> {
-  const token = await requestToken({ email, password }, "password");
+export async function loginAdmin(
+  email: string,
+  password: string,
+  captchaToken?: string
+): Promise<AdminSession> {
+  const token = await requestToken({ email, password }, "password", captchaToken);
 
   const profile = await fetchOwnProfile(token.access_token, token.user.id);
   if (!profile || profile.role !== "admin") {
