@@ -15,6 +15,11 @@ import {
 
 const WHATSAPP_NUMBER = "21657099154";
 
+// Customers only ever type the 8-digit local number — the +216 country
+// code is added programmatically so nobody has to type it on a phone
+// keyboard.
+const TN_PHONE_PREFIX = "+216";
+
 export default function CommandePage() {
   const { items, subtotal, clearCart } = useCart();
 
@@ -65,11 +70,16 @@ export default function CommandePage() {
     e.preventDefault();
     if (isSubmitting || items.length === 0 || !zoneId) return;
 
+    if (!/^\d{8}$/.test(phone)) {
+      setFormError("Numéro de téléphone invalide (8 chiffres).");
+      return;
+    }
+
     setIsSubmitting(true);
     setFormError(null);
 
     const trimmedName = fullName.trim();
-    const trimmedPhone = phone.trim();
+    const trimmedPhone = `${TN_PHONE_PREFIX}${phone}`;
     const trimmedAddress = address.trim();
 
     try {
@@ -250,13 +260,23 @@ export default function CommandePage() {
 
                 <label className="flex flex-col gap-1.5 text-xs font-black uppercase tracking-wide text-tn-black-soft/70">
                   Téléphone
-                  <input
-                    required
-                    type="tel"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    className="rounded-lg border-2 border-tn-black bg-tn-white px-3 py-2 text-sm font-medium normal-case text-tn-black shadow-[2px_2px_0_0_var(--tn-black)] transition-all duration-200 ease-[cubic-bezier(0.34,1.56,0.64,1)] focus:-translate-y-0.5 focus:shadow-[4px_4px_0_0_var(--tn-red)] focus:outline-none"
-                  />
+                  <div className="flex items-stretch rounded-lg border-2 border-tn-black bg-tn-white shadow-[2px_2px_0_0_var(--tn-black)] transition-all duration-200 ease-[cubic-bezier(0.34,1.56,0.64,1)] focus-within:-translate-y-0.5 focus-within:shadow-[4px_4px_0_0_var(--tn-red)]">
+                    <span className="flex items-center border-r-2 border-tn-black bg-tn-offwhite px-2.5 text-sm font-black text-tn-black-soft">
+                      {TN_PHONE_PREFIX}
+                    </span>
+                    <input
+                      required
+                      type="tel"
+                      inputMode="numeric"
+                      autoComplete="tel-national"
+                      pattern="[0-9]{8}"
+                      maxLength={8}
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                      placeholder="12345678"
+                      className="w-full min-w-0 rounded-r-lg bg-tn-white px-3 py-2 text-sm font-medium normal-case text-tn-black focus:outline-none"
+                    />
+                  </div>
                 </label>
 
                 <label className="flex flex-col gap-1.5 text-xs font-black uppercase tracking-wide text-tn-black-soft/70">
