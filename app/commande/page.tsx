@@ -118,7 +118,6 @@ export default function CommandePage() {
       setConfirmedName(trimmedName);
       setConfirmation({ trackingReference: result.trackingReference, total: result.total });
       setWhatsappUrl(url);
-      window.open(url, "_blank");
     } catch (err) {
       setFormError(
         err instanceof Error
@@ -164,9 +163,9 @@ export default function CommandePage() {
                 <span className="font-black text-tn-black">{formatPrice(confirmation.total)}</span>
               </p>
               <p className="mx-auto mt-4 max-w-md text-xs text-tn-black-soft/70">
-                Un message WhatsApp pré-rempli s&apos;est ouvert dans un nouvel
-                onglet pour confirmer votre commande. Si rien ne s&apos;est
-                ouvert, cliquez ci-dessous.
+                Cliquez ci-dessous pour envoyer votre commande sur WhatsApp
+                avec un message pré-rempli, et confirmer directement avec
+                nous.
               </p>
               <div className="mt-6 flex flex-wrap justify-center gap-4">
                 {whatsappUrl && (
