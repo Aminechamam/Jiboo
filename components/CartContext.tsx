@@ -33,6 +33,8 @@ type CartContextValue = {
   openCart: () => void;
   closeCart: () => void;
   toggleCart: () => void;
+  toastMessage: string | null;
+  showToast: (message: string) => void;
 };
 
 const CART_STORAGE_KEY = "jiboo-cart";
@@ -43,6 +45,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastKey, setToastKey] = useState(0);
 
   // Load any persisted cart once the component mounts in the browser. The
   // initial render (both server and first client paint) always starts from
@@ -104,9 +108,19 @@ export function CartProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const clearCart = useCallback(() => setItems([]), []);
+  const showToast = useCallback((message: string) => {
+    setToastMessage(message);
+    setToastKey((k) => k + 1);
+  }, []);
   const openCart = useCallback(() => setIsOpen(true), []);
   const closeCart = useCallback(() => setIsOpen(false), []);
   const toggleCart = useCallback(() => setIsOpen((v) => !v), []);
+
+  useEffect(() => {
+    if (toastKey === 0) return;
+    const timer = setTimeout(() => setToastMessage(null), 2400);
+    return () => clearTimeout(timer);
+  }, [toastKey]);
 
   const subtotal = useMemo(
     () => items.reduce((sum, i) => sum + i.price * i.quantity, 0),
@@ -130,6 +144,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
       openCart,
       closeCart,
       toggleCart,
+      toastMessage,
+      showToast,
     }),
     [
       items,
@@ -143,6 +159,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
       openCart,
       closeCart,
       toggleCart,
+      toastMessage,
+      showToast,
     ]
   );
 

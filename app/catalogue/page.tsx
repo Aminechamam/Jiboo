@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { ProductCard } from "@/components/ProductCard";
 import { CategoryIcon, iconForCategoryName } from "@/components/CategoryIcon";
 import { fetchCategories, fetchProducts, type Category, type Product } from "@/lib/supabase";
+import { dedupeCategories, normalizeText } from "@/lib/categories";
 
 const ALL_CATEGORIES = "Toutes";
 
@@ -24,16 +26,27 @@ const sortOptions: { value: SortKey; label: string }[] = [
 // swap.
 const FILTER_TRANSITION_MS = 180;
 
-export default function CataloguePage() {
+function CatalogueContent() {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [activeCategory, setActiveCategory] = useState<string>(ALL_CATEGORIES);
+  const [searchTerm, setSearchTerm] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("default");
   const [isPending, setIsPending] = useState(false);
   const [renderKey, setRenderKey] = useState(0);
+
+  // Sync the search box to the `?q=` param. useSearchParams (unlike reading
+  // window.location once on mount) returns a new object identity on every
+  // navigation — including a header search fired while already on this page
+  // — so typing a second search term while on /catalogue actually updates
+  // the field instead of silently doing nothing.
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    setSearchTerm(searchParams.get("q") ?? "");
+  }, [searchParams]);
 
   // Client-side only: this fetch runs in the visitor's browser, never during
   // `next build`'s prerendering, which is network-sandboxed in this project.
@@ -80,11 +93,38 @@ export default function CataloguePage() {
     setIsPending(true);
   };
 
+  const handleSearchChange = (value: string) => {
+    setSearchTerm(value);
+    setIsPending(true);
+  };
+
+  // Duplicate category rows (e.g. two "Éclairage") collapse into one chip —
+  // see lib/categories.ts.
+  const dedupedCategories = useMemo(() => dedupeCategories(categories), [categories]);
+
+  const activeGroup = dedupedCategories.find((g) => g.id === activeCategory) ?? null;
+  const activeCategoryIds = activeGroup?.ids ?? [activeCategory];
+  const activeCategoryLabel = activeCategory === ALL_CATEGORIES ? null : activeGroup?.name ?? null;
+
+  const chips: { id: string; label: string; icon?: ReturnType<typeof iconForCategoryName> }[] = [
+    { id: ALL_CATEGORIES, label: "Toutes" },
+    ...dedupedCategories.map((g) => ({ id: g.id, label: g.name, icon: iconForCategoryName(g.name) })),
+  ];
+
   const filteredProducts = useMemo(() => {
-    const base =
+    const byCategory =
       activeCategory === ALL_CATEGORIES
         ? products
-        : products.filter((p) => p.category?.id === activeCategory);
+        : products.filter((p) => p.category?.id && activeCategoryIds.includes(p.category.id));
+
+    const query = normalizeText(searchTerm.trim());
+    const base = query
+      ? byCategory.filter((p) =>
+          [p.name, p.reference, p.compatibility, p.description]
+            .filter(Boolean)
+            .some((field) => normalizeText(field as string).includes(query))
+        )
+      : byCategory;
 
     const sorted = [...base];
     switch (sortKey) {
@@ -101,17 +141,7 @@ export default function CataloguePage() {
         break;
     }
     return sorted;
-  }, [products, activeCategory, sortKey]);
-
-  const activeCategoryLabel =
-    activeCategory === ALL_CATEGORIES
-      ? null
-      : categories.find((c) => c.id === activeCategory)?.name ?? null;
-
-  const chips: { id: string; label: string; icon?: ReturnType<typeof iconForCategoryName> }[] = [
-    { id: ALL_CATEGORIES, label: "Toutes" },
-    ...categories.map((c) => ({ id: c.id, label: c.name, icon: iconForCategoryName(c.name) })),
-  ];
+  }, [products, activeCategory, sortKey, searchTerm]);
 
   return (
     <>
@@ -139,6 +169,39 @@ export default function CataloguePage() {
         <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
           {/* FILTER BAR */}
           <div className="mb-8 rounded-2xl border-2 border-tn-black bg-tn-white p-5 shadow-[4px_4px_0_0_var(--tn-black)] sm:p-6">
+            <div className="mb-5 flex items-center gap-2 rounded-lg border-2 border-tn-black bg-tn-offwhite px-3 py-2.5 transition-all duration-200 focus-within:shadow-[3px_3px_0_0_var(--tn-red)]">
+              <svg
+                viewBox="0 0 20 20"
+                fill="none"
+                className="h-4 w-4 flex-none text-tn-black-soft/50"
+                aria-hidden="true"
+              >
+                <circle cx="9" cy="9" r="6" stroke="currentColor" strokeWidth="1.8" />
+                <path d="M14 14l4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+              </svg>
+              <label htmlFor="catalogue-search" className="sr-only">
+                Rechercher une pièce par nom ou référence
+              </label>
+              <input
+                id="catalogue-search"
+                type="search"
+                value={searchTerm}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                placeholder="Rechercher : disque de frein, pompe à eau, référence..."
+                className="w-full bg-transparent text-sm font-bold text-tn-black placeholder:text-tn-black-soft/40 focus:outline-none"
+              />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => handleSearchChange("")}
+                  aria-label="Effacer la recherche"
+                  className="flex-none rounded-full px-2 py-1 text-xs font-black uppercase text-tn-black-soft/50 transition-colors duration-200 hover:text-tn-red"
+                >
+                  Effacer
+                </button>
+              )}
+            </div>
+
             <div className="flex flex-wrap items-center justify-between gap-4">
               <h2 className="text-xs font-black uppercase tracking-widest text-tn-black-soft/60">
                 Filtrer par catégorie
@@ -255,5 +318,13 @@ export default function CataloguePage() {
       </main>
       <Footer />
     </>
+  );
+}
+
+export default function CataloguePage() {
+  return (
+    <Suspense fallback={<Header />}>
+      <CatalogueContent />
+    </Suspense>
   );
 }

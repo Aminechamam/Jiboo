@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { CartProvider } from "@/components/CartContext";
+import { CartToast } from "@/components/CartToast";
 
 export const metadata: Metadata = {
   title: "Jiboo — Pièces détachées auto en Tunisie",
@@ -12,7 +13,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="fr" className="h-full antialiased">
       <body className="min-h-full flex flex-col bg-tn-white text-tn-black">
-        <CartProvider>{children}</CartProvider>
+        <CartProvider>
+          {children}
+          <CartToast />
+        </CartProvider>
       </body>
     </html>
   );

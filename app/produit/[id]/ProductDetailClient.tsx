@@ -58,7 +58,7 @@ function ProductDetailSkeleton() {
 export default function ProductDetailClient() {
   const params = useParams<{ id: string }>();
   const id = params?.id;
-  const { addItem } = useCart();
+  const { addItem, showToast } = useCart();
 
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
@@ -116,6 +116,7 @@ export default function ProductDetailClient() {
       photoUrl: product.photoUrl,
     });
     setPulseKey((k) => k + 1);
+    showToast(`${product.name} ajouté au panier`);
   };
 
   return (

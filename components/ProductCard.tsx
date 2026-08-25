@@ -19,7 +19,7 @@ export function ProductCard({
   /** Inline style passthrough — used for staggered `animationDelay`. */
   style?: CSSProperties;
 }) {
-  const { addItem } = useCart();
+  const { addItem, showToast } = useCart();
   // Bumped on every successful "add" click. Used as the anchor's `key` so the
   // scale-pulse confirmation animation restarts on repeated clicks — a fresh
   // element mount is the simplest way to retrigger a CSS keyframe animation.
@@ -39,6 +39,7 @@ export function ProductCard({
       photoUrl: product.photoUrl,
     });
     setPulseKey((k) => k + 1);
+    showToast(`${product.name} ajouté au panier`);
   };
 
   return (

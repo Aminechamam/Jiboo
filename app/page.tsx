@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { ProductCard } from "@/components/ProductCard";
 import { CategoryIcon, iconForCategoryName } from "@/components/CategoryIcon";
 import { fetchCategories, fetchProducts, type Category, type Product } from "@/lib/supabase";
+import { dedupeCategories } from "@/lib/categories";
 
 const benefits = [
   { title: "Livraison rapide", detail: "24 à 48h partout en Tunisie" },
@@ -20,6 +21,10 @@ export default function Home() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Duplicate category rows (e.g. two "Éclairage") collapse into one card —
+  // see lib/categories.ts.
+  const dedupedCategories = useMemo(() => dedupeCategories(categories), [categories]);
 
   // Client-side only: this fetch runs in the visitor's browser, never during
   // `next build`'s prerendering, which is network-sandboxed in this project.
@@ -174,7 +179,7 @@ export default function Home() {
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-              {categories.map((cat, i) => (
+              {dedupedCategories.map((cat, i) => (
                 <Link
                   key={cat.id}
                   href="/catalogue"
