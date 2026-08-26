@@ -109,6 +109,12 @@ export default function Home() {
                 >
                   Voir le catalogue
                 </Link>
+                <Link
+                  href="/catalogue?rayon=quincaillerie"
+                  className="rounded-lg border-2 border-tn-amber px-6 py-3 text-sm font-black uppercase tracking-wide text-tn-amber transition-all duration-200 hover:scale-105 hover:bg-tn-amber hover:text-tn-black active:scale-95"
+                >
+                  Quincaillerie
+                </Link>
                 <a
                   href="#populaires"
                   className="rounded-lg border-2 border-tn-white px-6 py-3 text-sm font-black uppercase tracking-wide text-tn-white transition-all duration-200 hover:scale-105 hover:border-tn-amber hover:text-tn-amber active:scale-95"
