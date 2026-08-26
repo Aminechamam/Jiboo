@@ -104,10 +104,10 @@ export default function Home() {
 
               <div className="mt-8 flex flex-wrap gap-4">
                 <Link
-                  href="/catalogue"
+                  href="/catalogue?rayon=pieces-auto"
                   className="rounded-lg bg-tn-red px-6 py-3 text-sm font-black uppercase tracking-wide text-tn-white transition-all duration-200 hover:scale-105 hover:bg-tn-amber hover:text-tn-black active:scale-95"
                 >
-                  Voir le catalogue
+                  Pièces Auto
                 </Link>
                 <Link
                   href="/catalogue?rayon=quincaillerie"
