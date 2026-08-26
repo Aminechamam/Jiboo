@@ -6,7 +6,14 @@ import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { ProductCard } from "@/components/ProductCard";
 import { CategoryIcon, iconForCategoryName } from "@/components/CategoryIcon";
-import { fetchCategories, fetchProducts, type Category, type Product } from "@/lib/supabase";
+import {
+  fetchCategories,
+  fetchDepartments,
+  fetchProducts,
+  type Category,
+  type Department,
+  type Product,
+} from "@/lib/supabase";
 import { dedupeCategories } from "@/lib/categories";
 
 const benefits = [
@@ -18,23 +25,21 @@ const benefits = [
 
 export default function Home() {
   const [categories, setCategories] = useState<Category[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-
-  // Duplicate category rows (e.g. two "Éclairage") collapse into one card —
-  // see lib/categories.ts.
-  const dedupedCategories = useMemo(() => dedupeCategories(categories), [categories]);
 
   // Client-side only: this fetch runs in the visitor's browser, never during
   // `next build`'s prerendering, which is network-sandboxed in this project.
   useEffect(() => {
     let cancelled = false;
-    Promise.all([fetchCategories(), fetchProducts()])
-      .then(([c, p]) => {
+    Promise.all([fetchCategories(), fetchProducts(), fetchDepartments()])
+      .then(([c, p, d]) => {
         if (cancelled) return;
         setCategories(c);
         setProducts(p);
+        setDepartments(d);
       })
       .catch(() => {
         if (!cancelled) {
@@ -48,6 +53,21 @@ export default function Home() {
       cancelled = true;
     };
   }, []);
+
+  // Un groupe de catégories par rayon — c'est ce qui donne au visiteur deux
+  // sections clairement distinctes ("Pièces Auto" / "Quincaillerie") au lieu
+  // d'une seule liste où tout est mélangé. Un rayon sans catégorie (encore)
+  // n'affiche simplement pas de section.
+  const departmentSections = useMemo(
+    () =>
+      departments
+        .map((dept) => ({
+          department: dept,
+          categories: dedupeCategories(categories.filter((c) => c.department?.id === dept.id)),
+        }))
+        .filter((section) => section.categories.length > 0),
+    [departments, categories]
+  );
 
   const popularProducts = products.slice(0, 8);
 
@@ -159,16 +179,11 @@ export default function Home() {
           </div>
         </section>
 
-        {/* CATEGORIES */}
-        <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
-          <div className="mb-10 flex items-end justify-between">
-            <h2 className="text-2xl font-black uppercase tracking-wide text-tn-black sm:text-3xl">
-              Catégories
-            </h2>
-            <div className="tn-stripes h-2 w-24 rounded-full" />
-          </div>
-
-          {loading ? (
+        {/* CATEGORIES BY RAYON — une section distincte par rayon (Pièces Auto,
+            Quincaillerie, ...) au lieu d'une seule liste mélangée, pour que
+            les deux univers du site soient visuellement clairs dès la home. */}
+        {loading ? (
+          <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
               {Array.from({ length: 6 }).map((_, i) => (
                 <div
@@ -177,26 +192,42 @@ export default function Home() {
                 />
               ))}
             </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-              {dedupedCategories.map((cat, i) => (
+          </section>
+        ) : (
+          departmentSections.map(({ department, categories: cats }) => (
+            <section key={department.id} className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
+              <div className="mb-10 flex items-end justify-between">
+                <h2 className="text-2xl font-black uppercase tracking-wide text-tn-black sm:text-3xl">
+                  {department.name}
+                </h2>
                 <Link
-                  key={cat.id}
-                  href="/catalogue"
-                  style={{ animationDelay: `${i * 40}ms` }}
-                  className="group flex flex-col items-center gap-3 rounded-xl border-2 border-tn-black bg-tn-white p-5 text-center shadow-[3px_3px_0_0_var(--tn-black)] transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:bg-tn-black hover:shadow-[6px_6px_0_0_var(--tn-red)] motion-safe:opacity-0 motion-safe:[animation:tn-rise-in_500ms_cubic-bezier(0.22,1,0.36,1)_both]"
+                  href={`/catalogue?rayon=${department.slug}`}
+                  className="text-sm font-black uppercase tracking-wide text-tn-red transition-colors duration-200 hover:text-tn-black"
                 >
-                  <span className="text-tn-red transition-transform duration-200 group-hover:-translate-y-1 group-hover:text-tn-amber">
-                    <CategoryIcon icon={iconForCategoryName(cat.name)} className="h-9 w-9" />
-                  </span>
-                  <span className="text-xs font-extrabold uppercase tracking-wide text-tn-black group-hover:text-tn-white">
-                    {cat.name}
-                  </span>
+                  Tout voir →
                 </Link>
-              ))}
-            </div>
-          )}
-        </section>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+                {cats.map((cat, i) => (
+                  <Link
+                    key={cat.id}
+                    href={`/catalogue?rayon=${department.slug}&categorie=${cat.id}`}
+                    style={{ animationDelay: `${i * 40}ms` }}
+                    className="group flex flex-col items-center gap-3 rounded-xl border-2 border-tn-black bg-tn-white p-5 text-center shadow-[3px_3px_0_0_var(--tn-black)] transition-all duration-200 hover:-translate-y-1 hover:scale-105 hover:bg-tn-black hover:shadow-[6px_6px_0_0_var(--tn-red)] motion-safe:opacity-0 motion-safe:[animation:tn-rise-in_500ms_cubic-bezier(0.22,1,0.36,1)_both]"
+                  >
+                    <span className="text-tn-red transition-transform duration-200 group-hover:-translate-y-1 group-hover:text-tn-amber">
+                      <CategoryIcon icon={iconForCategoryName(cat.name)} className="h-9 w-9" />
+                    </span>
+                    <span className="text-xs font-extrabold uppercase tracking-wide text-tn-black group-hover:text-tn-white">
+                      {cat.name}
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            </section>
+          ))
+        )}
 
         {/* CTA BANNER */}
         <section className="tn-diagonal-both relative bg-tn-red py-14">

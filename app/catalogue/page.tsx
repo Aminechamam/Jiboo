@@ -6,10 +6,18 @@ import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { ProductCard } from "@/components/ProductCard";
 import { CategoryIcon, iconForCategoryName } from "@/components/CategoryIcon";
-import { fetchCategories, fetchProducts, type Category, type Product } from "@/lib/supabase";
+import {
+  fetchCategories,
+  fetchDepartments,
+  fetchProducts,
+  type Category,
+  type Department,
+  type Product,
+} from "@/lib/supabase";
 import { dedupeCategories, normalizeText } from "@/lib/categories";
 
 const ALL_CATEGORIES = "Toutes";
+const DEFAULT_DEPARTMENT_SLUG = "pieces-auto";
 
 type SortKey = "default" | "price-asc" | "price-desc" | "name-asc";
 
@@ -29,34 +37,41 @@ const FILTER_TRANSITION_MS = 180;
 function CatalogueContent() {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  const [activeDepartmentSlug, setActiveDepartmentSlug] = useState<string>(DEFAULT_DEPARTMENT_SLUG);
   const [activeCategory, setActiveCategory] = useState<string>(ALL_CATEGORIES);
   const [searchTerm, setSearchTerm] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("default");
   const [isPending, setIsPending] = useState(false);
   const [renderKey, setRenderKey] = useState(0);
 
-  // Sync the search box to the `?q=` param. useSearchParams (unlike reading
-  // window.location once on mount) returns a new object identity on every
-  // navigation — including a header search fired while already on this page
-  // — so typing a second search term while on /catalogue actually updates
-  // the field instead of silently doing nothing.
+  // Sync ?rayon=, ?categorie= and ?q= from the URL. useSearchParams (unlike
+  // reading window.location once on mount) returns a new object identity on
+  // every navigation — including a header search or a home-page category
+  // link fired while already on this page — so those actually update the
+  // page instead of silently doing nothing.
   const searchParams = useSearchParams();
   useEffect(() => {
     setSearchTerm(searchParams.get("q") ?? "");
+    const rayon = searchParams.get("rayon");
+    if (rayon) setActiveDepartmentSlug(rayon);
+    const categorie = searchParams.get("categorie");
+    setActiveCategory(categorie ?? ALL_CATEGORIES);
   }, [searchParams]);
 
   // Client-side only: this fetch runs in the visitor's browser, never during
   // `next build`'s prerendering, which is network-sandboxed in this project.
   useEffect(() => {
     let cancelled = false;
-    Promise.all([fetchProducts(), fetchCategories()])
-      .then(([p, c]) => {
+    Promise.all([fetchProducts(), fetchCategories(), fetchDepartments()])
+      .then(([p, c, d]) => {
         if (cancelled) return;
         setProducts(p);
         setCategories(c);
+        setDepartments(d);
       })
       .catch(() => {
         if (!cancelled) {
@@ -83,6 +98,12 @@ function CatalogueContent() {
     return () => clearTimeout(timer);
   }, [isPending]);
 
+  const handleDepartmentChange = (slug: string) => {
+    setActiveDepartmentSlug(slug);
+    setActiveCategory(ALL_CATEGORIES);
+    setIsPending(true);
+  };
+
   const handleCategoryChange = (id: string) => {
     setActiveCategory(id);
     setIsPending(true);
@@ -98,9 +119,27 @@ function CatalogueContent() {
     setIsPending(true);
   };
 
+  const activeDepartment = departments.find((d) => d.slug === activeDepartmentSlug) ?? null;
+  const isQuincaillerie = activeDepartmentSlug === "quincaillerie";
+
+  // Un produit hors rayon actif ne doit jamais apparaître, même si un filtre
+  // catégorie/recherche matcherait autrement — c'est ce qui garantit une
+  // séparation nette entre rayons plutôt qu'un simple tri visuel.
+  const departmentProducts = useMemo(
+    () => products.filter((p) => p.category?.department?.slug === activeDepartmentSlug),
+    [products, activeDepartmentSlug]
+  );
+
   // Duplicate category rows (e.g. two "Éclairage") collapse into one chip —
-  // see lib/categories.ts.
-  const dedupedCategories = useMemo(() => dedupeCategories(categories), [categories]);
+  // see lib/categories.ts. Scoped to the active department only.
+  const departmentCategories = useMemo(
+    () => categories.filter((c) => c.department?.slug === activeDepartmentSlug),
+    [categories, activeDepartmentSlug]
+  );
+  const dedupedCategories = useMemo(
+    () => dedupeCategories(departmentCategories),
+    [departmentCategories]
+  );
 
   const activeGroup = dedupedCategories.find((g) => g.id === activeCategory) ?? null;
   const activeCategoryIds = activeGroup?.ids ?? [activeCategory];
@@ -114,8 +153,8 @@ function CatalogueContent() {
   const filteredProducts = useMemo(() => {
     const byCategory =
       activeCategory === ALL_CATEGORIES
-        ? products
-        : products.filter((p) => p.category?.id && activeCategoryIds.includes(p.category.id));
+        ? departmentProducts
+        : departmentProducts.filter((p) => p.category?.id && activeCategoryIds.includes(p.category.id));
 
     const query = normalizeText(searchTerm.trim());
     const base = query
@@ -141,7 +180,7 @@ function CatalogueContent() {
         break;
     }
     return sorted;
-  }, [products, activeCategory, sortKey, searchTerm]);
+  }, [departmentProducts, activeCategory, activeCategoryIds, sortKey, searchTerm]);
 
   return (
     <>
@@ -152,17 +191,50 @@ function CatalogueContent() {
           <div className="tn-diagonal-bottom absolute inset-x-0 bottom-0 h-10 bg-tn-offwhite sm:h-14" />
           <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <span className="tn-ribbon inline-block bg-tn-red px-4 py-1 text-xs font-black uppercase tracking-widest text-tn-white">
-              Catalogue complet
+              {isQuincaillerie ? "Quincaillerie" : "Catalogue complet"}
             </span>
             <h1 className="mt-5 max-w-2xl text-3xl font-black uppercase leading-[1.05] tracking-wide text-tn-white sm:text-4xl lg:text-5xl">
-              Toutes les <span className="text-tn-amber">pièces</span>,
-              filtrées à votre <span className="text-tn-red">façon</span>
+              {isQuincaillerie ? (
+                <>
+                  Toute la <span className="text-tn-amber">quincaillerie</span>, filtrée à votre{" "}
+                  <span className="text-tn-red">façon</span>
+                </>
+              ) : (
+                <>
+                  Toutes les <span className="text-tn-amber">pièces</span>, filtrées à votre{" "}
+                  <span className="text-tn-red">façon</span>
+                </>
+              )}
             </h1>
             <p className="mt-4 max-w-xl text-sm text-tn-white/70 sm:text-base">
-              Freinage, moteur, filtration, suspension, éclairage, carrosserie
-              — filtrez par catégorie et triez pour trouver la pièce qu&apos;il
-              vous faut.
+              {isQuincaillerie
+                ? "Outillage, fixations et accessoires — filtrez par catégorie et triez pour trouver ce qu'il vous faut."
+                : "Freinage, moteur, filtration, suspension, éclairage, carrosserie — filtrez par catégorie et triez pour trouver la pièce qu'il vous faut."}
             </p>
+
+            {/* RAYON SWITCH — la séparation nette entre les deux univers du site */}
+            {departments.length > 0 && (
+              <div className="mt-6 flex flex-wrap gap-2">
+                {departments.map((d) => {
+                  const isActive = d.slug === activeDepartmentSlug;
+                  return (
+                    <button
+                      key={d.id}
+                      type="button"
+                      onClick={() => handleDepartmentChange(d.slug)}
+                      aria-pressed={isActive}
+                      className={`rounded-full border-2 px-5 py-2 text-xs font-black uppercase tracking-wide transition-all duration-200 ${
+                        isActive
+                          ? "border-tn-amber bg-tn-amber text-tn-black"
+                          : "border-tn-white/40 bg-transparent text-tn-white hover:border-tn-amber hover:text-tn-amber"
+                      }`}
+                    >
+                      {d.name}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </section>
 
@@ -180,14 +252,18 @@ function CatalogueContent() {
                 <path d="M14 14l4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
               </svg>
               <label htmlFor="catalogue-search" className="sr-only">
-                Rechercher une pièce par nom ou référence
+                Rechercher un produit par nom ou référence
               </label>
               <input
                 id="catalogue-search"
                 type="search"
                 value={searchTerm}
                 onChange={(e) => handleSearchChange(e.target.value)}
-                placeholder="Rechercher : disque de frein, pompe à eau, référence..."
+                placeholder={
+                  isQuincaillerie
+                    ? "Rechercher : visseuse, boulon, référence..."
+                    : "Rechercher : disque de frein, pompe à eau, référence..."
+                }
                 className="w-full bg-transparent text-sm font-bold text-tn-black placeholder:text-tn-black-soft/40 focus:outline-none"
               />
               {searchTerm && (
@@ -258,11 +334,17 @@ function CatalogueContent() {
               {filteredProducts.length}
             </span>
             <span className="text-sm font-bold uppercase tracking-wide text-tn-black-soft/70">
-              {filteredProducts.length > 1 ? "pièces trouvées" : "pièce trouvée"}
+              {filteredProducts.length > 1 ? "produits trouvés" : "produit trouvé"}
               {activeCategoryLabel && (
                 <>
                   {" "}
                   en <span className="text-tn-red">{activeCategoryLabel}</span>
+                </>
+              )}
+              {activeDepartment && (
+                <>
+                  {" "}
+                  · rayon <span className="text-tn-red">{activeDepartment.name}</span>
                 </>
               )}
             </span>
@@ -308,7 +390,7 @@ function CatalogueContent() {
               {filteredProducts.length === 0 && (
                 <div className="rounded-xl border-2 border-dashed border-tn-black/30 bg-tn-white p-12 text-center">
                   <p className="text-sm font-bold uppercase tracking-wide text-tn-black-soft/60">
-                    Aucune pièce ne correspond à ce filtre.
+                    Aucun produit ne correspond à ce filtre.
                   </p>
                 </div>
               )}
