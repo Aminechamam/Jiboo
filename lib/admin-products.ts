@@ -14,7 +14,7 @@
 // authedHeaders in lib/admin-auth.ts) so Postgres RLS resolves auth.uid() to
 // that user.
 
-import { SUPABASE_URL, type Category } from "./supabase";
+import { SUPABASE_URL, type Category, type Department } from "./supabase";
 import { authedHeaders } from "./admin-auth";
 import { SessionExpiredError } from "./admin-data";
 
@@ -181,12 +181,19 @@ export async function deleteProduct(accessToken: string, id: string): Promise<vo
 // Category find-or-create (used by CSV import — categories are matched by
 // name, case-insensitively, against an already-fetched list; if none match a
 // new one is created via the categories_write_staff RLS policy).
+//
+// `department` is required for the CREATE path so a brand-new category never
+// ends up without a rayon (which is what caused the whole "quincaillerie
+// products displayed as compatible with every vehicle" bug — the CSV import
+// created a "HARDEN" category with no department at all). An existing
+// matched category keeps its own real department untouched.
 // ---------------------------------------------------------------------------
 
 export async function findOrCreateCategory(
   accessToken: string,
   name: string,
-  existingCategories: Category[]
+  existingCategories: Category[],
+  department: Department
 ): Promise<Category> {
   const trimmed = name.trim();
   const match = existingCategories.find(
@@ -202,7 +209,7 @@ export async function findOrCreateCategory(
       "Content-Type": "application/json",
       Prefer: "return=representation",
     },
-    body: JSON.stringify({ name: trimmed }),
+    body: JSON.stringify({ name: trimmed, department_id: department.id }),
   });
   if (!res.ok) {
     if (res.status === 401) throw new SessionExpiredError();
@@ -215,7 +222,7 @@ export async function findOrCreateCategory(
   if (!row) {
     throw new Error(`Réponse invalide du serveur lors de la création de la catégorie "${trimmed}".`);
   }
-  return { id: row.id, name: row.name };
+  return { id: row.id, name: row.name, department };
 }
 
 // ---------------------------------------------------------------------------
@@ -396,6 +403,11 @@ export function parseProductsCsv(text: string): ParseCsvResult {
 // Bulk import — sequential, one row at a time, so a single bad/duplicate row
 // (e.g. duplicate `reference`, which is UNIQUE) doesn't abort the whole
 // batch. Each row's error is caught individually.
+//
+// `department` is the rayon to use for any *new* category this batch needs
+// to create (an admin picks it once for the whole file before importing —
+// see the CSV import UI). Categories that already exist keep their own
+// department untouched.
 // ---------------------------------------------------------------------------
 
 export type ImportSummary = {
@@ -423,6 +435,7 @@ export async function bulkImportProducts(
   accessToken: string,
   rows: CsvImportRow[],
   categories: Category[],
+  department: Department,
   onProgress?: (done: number, total: number) => void
 ): Promise<ImportSummary> {
   const workingCategories = [...categories];
@@ -434,7 +447,12 @@ export async function bulkImportProducts(
     try {
       let categoryId: string | null = null;
       if (row.categoryName) {
-        const category = await findOrCreateCategory(accessToken, row.categoryName, workingCategories);
+        const category = await findOrCreateCategory(
+          accessToken,
+          row.categoryName,
+          workingCategories,
+          department
+        );
         if (!workingCategories.some((c) => c.id === category.id)) {
           workingCategories.push(category);
         }

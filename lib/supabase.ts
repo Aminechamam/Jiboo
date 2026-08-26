@@ -15,10 +15,34 @@ const headers = {
   Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
 };
 
+/** A rayon (Pièces Auto, Quincaillerie, ...) — chaque catégorie appartient à
+ *  un seul département. Utilisé pour n'afficher les filtres/infos propres
+ *  aux véhicules (marque, modèle, compatibilité) que pour Pièces Auto. */
+export type Department = {
+  id: string;
+  name: string;
+  slug: string;
+};
+
 export type Category = {
   id: string;
   name: string;
+  department: Department | null;
 };
+
+/** Forme brute renvoyée par PostgREST pour une catégorie jointe — le nom de
+ *  la relation FK est `departments` (pluriel, nom de la table), remappé en
+ *  `department` (singulier) dans le type applicatif `Category` ci-dessus. */
+type RawCategory = {
+  id: string;
+  name: string;
+  departments: Department | null;
+};
+
+function mapCategory(raw: RawCategory | null | undefined): Category | null {
+  if (!raw) return null;
+  return { id: raw.id, name: raw.name, department: raw.departments };
+}
 
 export type DeliveryZone = {
   id: string;
@@ -44,7 +68,9 @@ export type Product = {
   photoUrl: string | null;
   lowStockThreshold: number;
   category: Category | null;
-  /** Short display summary, e.g. "Peugeot 208 / Golf 7". */
+  /** Short display summary, e.g. "Peugeot 208 / Golf 7". Vide (pas "Toutes
+   *  marques") en dehors du rayon Pièces Auto, où la compatibilité véhicule
+   *  n'a pas de sens. */
   compatibility: string;
   /** Full per-vehicle compatibility rows — used by the product detail page. */
   compatibilityList: ProductCompatibility[];
@@ -59,7 +85,7 @@ type RawProduct = {
   stock: number;
   photo_url: string | null;
   low_stock_threshold: number;
-  categories: Category | null;
+  categories: RawCategory | null;
   product_compatibility: ProductCompatibility[] | null;
 };
 
@@ -82,45 +108,12 @@ export function formatPrice(price: number): string {
   return `${price.toFixed(3).replace(".", ",")} DT`;
 }
 
-export async function fetchProducts(): Promise<Product[]> {
-  const url =
-    `${SUPABASE_URL}/rest/v1/products?select=id,reference,name,description,price,stock,photo_url,low_stock_threshold,` +
-    `categories(id,name),product_compatibility(make,model,year_from,year_to,engine)&order=created_at.asc`;
-
-  const res = await fetch(url, { headers });
-  if (!res.ok) {
-    throw new Error("Impossible de charger les produits.");
-  }
-  const rows: RawProduct[] = await res.json();
-
-  return rows.map((row) => ({
-    id: row.id,
-    reference: row.reference,
-    name: row.name,
-    description: row.description,
-    price: Number(row.price),
-    stock: row.stock,
-    photoUrl: row.photo_url,
-    lowStockThreshold: row.low_stock_threshold,
-    category: row.categories ?? null,
-    compatibility: buildCompatibility(row.product_compatibility),
-    compatibilityList: row.product_compatibility ?? [],
-  }));
-}
-
-export async function fetchProductById(id: string): Promise<Product | null> {
-  const url =
-    `${SUPABASE_URL}/rest/v1/products?id=eq.${id}&select=id,reference,name,description,price,stock,photo_url,low_stock_threshold,` +
-    `categories(id,name),product_compatibility(make,model,year_from,year_to,engine)`;
-
-  const res = await fetch(url, { headers });
-  if (!res.ok) {
-    throw new Error("Impossible de charger ce produit.");
-  }
-  const rows: RawProduct[] = await res.json();
-  const row = rows[0];
-  if (!row) return null;
-
+function mapProduct(row: RawProduct): Product {
+  const category = mapCategory(row.categories);
+  // La compatibilité véhicule (marque/modèle/année) n'a de sens que pour le
+  // rayon Pièces Auto — un produit de quincaillerie sans ligne de
+  // compatibilité ne doit pas s'afficher comme "Toutes marques".
+  const isPiecesAuto = category?.department?.slug === "pieces-auto";
   return {
     id: row.id,
     reference: row.reference,
@@ -130,17 +123,55 @@ export async function fetchProductById(id: string): Promise<Product | null> {
     stock: row.stock,
     photoUrl: row.photo_url,
     lowStockThreshold: row.low_stock_threshold,
-    category: row.categories ?? null,
-    compatibility: buildCompatibility(row.product_compatibility),
+    category,
+    compatibility: isPiecesAuto ? buildCompatibility(row.product_compatibility) : "",
     compatibilityList: row.product_compatibility ?? [],
   };
 }
 
+export async function fetchProducts(): Promise<Product[]> {
+  const url =
+    `${SUPABASE_URL}/rest/v1/products?select=id,reference,name,description,price,stock,photo_url,low_stock_threshold,` +
+    `categories(id,name,departments(id,name,slug)),product_compatibility(make,model,year_from,year_to,engine)&order=created_at.asc`;
+
+  const res = await fetch(url, { headers });
+  if (!res.ok) {
+    throw new Error("Impossible de charger les produits.");
+  }
+  const rows: RawProduct[] = await res.json();
+  return rows.map(mapProduct);
+}
+
+export async function fetchProductById(id: string): Promise<Product | null> {
+  const url =
+    `${SUPABASE_URL}/rest/v1/products?id=eq.${id}&select=id,reference,name,description,price,stock,photo_url,low_stock_threshold,` +
+    `categories(id,name,departments(id,name,slug)),product_compatibility(make,model,year_from,year_to,engine)`;
+
+  const res = await fetch(url, { headers });
+  if (!res.ok) {
+    throw new Error("Impossible de charger ce produit.");
+  }
+  const rows: RawProduct[] = await res.json();
+  const row = rows[0];
+  if (!row) return null;
+  return mapProduct(row);
+}
+
 export async function fetchCategories(): Promise<Category[]> {
-  const url = `${SUPABASE_URL}/rest/v1/categories?select=id,name&order=name.asc`;
+  const url = `${SUPABASE_URL}/rest/v1/categories?select=id,name,departments(id,name,slug)&order=name.asc`;
   const res = await fetch(url, { headers });
   if (!res.ok) {
     throw new Error("Impossible de charger les catégories.");
+  }
+  const rows: RawCategory[] = await res.json();
+  return rows.map((r) => ({ id: r.id, name: r.name, department: r.departments }));
+}
+
+export async function fetchDepartments(): Promise<Department[]> {
+  const url = `${SUPABASE_URL}/rest/v1/departments?select=id,name,slug&order=name.asc`;
+  const res = await fetch(url, { headers });
+  if (!res.ok) {
+    throw new Error("Impossible de charger les rayons.");
   }
   return res.json();
 }

@@ -232,23 +232,25 @@ export default function ProductDetailClient() {
                   )}
                 </div>
 
-                {/* COMPATIBILITY */}
-                <div className="rounded-2xl border-2 border-tn-black bg-tn-white p-5 shadow-[4px_4px_0_0_var(--tn-black)]">
-                  <h2 className="text-xs font-black uppercase tracking-widest text-tn-black-soft/50">
-                    Véhicules compatibles
-                  </h2>
-                  {product.compatibilityList.length === 0 ? (
-                    <p className="mt-2 text-sm font-bold uppercase tracking-wide text-tn-black-soft/60">
-                      Toutes marques
-                    </p>
-                  ) : (
-                    <ul className="mt-2 flex flex-col">
-                      {product.compatibilityList.map((item, i) => (
-                        <CompatibilityRow key={`${item.make}-${item.model}-${i}`} item={item} />
-                      ))}
-                    </ul>
-                  )}
-                </div>
+                {/* COMPATIBILITY — uniquement pertinent pour le rayon Pièces Auto */}
+                {product.category?.department?.slug === "pieces-auto" && (
+                  <div className="rounded-2xl border-2 border-tn-black bg-tn-white p-5 shadow-[4px_4px_0_0_var(--tn-black)]">
+                    <h2 className="text-xs font-black uppercase tracking-widest text-tn-black-soft/50">
+                      Véhicules compatibles
+                    </h2>
+                    {product.compatibilityList.length === 0 ? (
+                      <p className="mt-2 text-sm font-bold uppercase tracking-wide text-tn-black-soft/60">
+                        Toutes marques
+                      </p>
+                    ) : (
+                      <ul className="mt-2 flex flex-col">
+                        {product.compatibilityList.map((item, i) => (
+                          <CompatibilityRow key={`${item.make}-${item.model}-${i}`} item={item} />
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           ) : null}

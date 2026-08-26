@@ -5,7 +5,15 @@ import { useRouter } from "next/navigation";
 import { useAdminAuth } from "@/components/AdminAuthContext";
 import { PartPlaceholder } from "@/components/PartPlaceholder";
 import { Spinner } from "@/components/Spinner";
-import { fetchCategories, fetchProducts, formatPrice, type Category, type Product } from "@/lib/supabase";
+import {
+  fetchCategories,
+  fetchDepartments,
+  fetchProducts,
+  formatPrice,
+  type Category,
+  type Department,
+  type Product,
+} from "@/lib/supabase";
 import {
   SessionExpiredError,
   bulkImportProducts,
@@ -68,6 +76,36 @@ function validateDraft(draft: Draft): string | null {
   return null;
 }
 
+/** Options d'un <select> de catégorie, groupées par rayon (department) —
+ *  une catégorie sans rayon (ne devrait plus arriver après la migration
+ *  departments, gardé par sécurité) tombe dans un groupe "Sans rayon". */
+function CategoryOptions({ categories }: { categories: Category[] }) {
+  const groups = new Map<string, { label: string; items: Category[] }>();
+  for (const c of categories) {
+    const key = c.department?.id ?? "none";
+    const label = c.department?.name ?? "Sans rayon";
+    const group = groups.get(key);
+    if (group) {
+      group.items.push(c);
+    } else {
+      groups.set(key, { label, items: [c] });
+    }
+  }
+  return (
+    <>
+      {Array.from(groups.values()).map((group) => (
+        <optgroup key={group.label} label={group.label}>
+          {group.items.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </optgroup>
+      ))}
+    </>
+  );
+}
+
 function StockBadge({ product }: { product: Product }) {
   const outOfStock = product.stock <= 0;
   const lowStock = !outOfStock && product.stock <= product.lowStockThreshold;
@@ -102,6 +140,7 @@ export default function AdminProduitsPage() {
 
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -119,6 +158,7 @@ export default function AdminProduitsPage() {
   const [csvProgress, setCsvProgress] = useState<{ done: number; total: number } | null>(null);
   const [csvSummary, setCsvSummary] = useState<ImportSummary | null>(null);
   const [csvParseErrors, setCsvParseErrors] = useState<RowIssue[]>([]);
+  const [csvDepartmentId, setCsvDepartmentId] = useState<string>("");
 
   // Delete confirmation: deleteTarget !== null opens the modal.
   // orderCount is null while it's still being fetched.
@@ -139,11 +179,13 @@ export default function AdminProduitsPage() {
   const loadAll = useCallback(() => {
     setLoading(true);
     setLoadError(null);
-    Promise.all([fetchProducts(), fetchCategories()])
-      .then(([p, c]) => {
+    Promise.all([fetchProducts(), fetchCategories(), fetchDepartments()])
+      .then(([p, c, d]) => {
         setProducts(p);
         setCategories(c);
+        setDepartments(d);
         setNewProduct((prev) => ({ ...prev, categoryId: prev.categoryId || c[0]?.id || "" }));
+        setCsvDepartmentId((prev) => prev || d[0]?.id || "");
       })
       .catch(() => {
         setLoadError("Impossible de charger les produits. Veuillez réessayer.");
@@ -300,6 +342,7 @@ export default function AdminProduitsPage() {
       });
 
       const category = categories.find((c) => c.id === created.category_id) ?? null;
+      const isPiecesAuto = category?.department?.slug === "pieces-auto";
       const product: Product = {
         id: created.id,
         reference: created.reference,
@@ -310,7 +353,7 @@ export default function AdminProduitsPage() {
         photoUrl: created.photo_url,
         lowStockThreshold: created.low_stock_threshold,
         category,
-        compatibility: "Toutes marques",
+        compatibility: isPiecesAuto ? "Toutes marques" : "",
         compatibilityList: [],
       };
       setProducts((prev) => [product, ...prev]);
@@ -346,10 +389,26 @@ export default function AdminProduitsPage() {
         return;
       }
 
+      const chosenDepartment = departments.find((d) => d.id === csvDepartmentId);
+      if (!chosenDepartment) {
+        setCsvParseErrors((prev) => [
+          ...prev,
+          { row: 0, reason: "Choisissez un rayon avant d'importer." },
+        ]);
+        setCsvBusy(false);
+        return;
+      }
+
       setCsvProgress({ done: 0, total: rows.length });
-      const summary = await bulkImportProducts(session.accessToken, rows, categories, (done, total) => {
-        setCsvProgress({ done, total });
-      });
+      const summary = await bulkImportProducts(
+        session.accessToken,
+        rows,
+        categories,
+        chosenDepartment,
+        (done, total) => {
+          setCsvProgress({ done, total });
+        }
+      );
       setCsvSummary(summary);
       loadAll();
     } catch (err) {
@@ -412,11 +471,7 @@ export default function AdminProduitsPage() {
               className={inputClass}
             >
               <option value="">Aucune</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
+              <CategoryOptions categories={categories} />
             </select>
           </label>
           <label className={labelClass}>
@@ -496,6 +551,21 @@ export default function AdminProduitsPage() {
           optionnelle. Les lignes sont importées une par une&nbsp;: une ligne en erreur (référence
           en double, prix invalide…) n&apos;empêche pas les autres d&apos;être importées.
         </p>
+
+        <label className={`${labelClass} mt-4 max-w-xs`}>
+          Rayon (pour toute nouvelle catégorie créée par cet import)
+          <select
+            value={csvDepartmentId}
+            onChange={(e) => setCsvDepartmentId(e.target.value)}
+            className={inputClass}
+          >
+            {departments.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+          </select>
+        </label>
 
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <input
@@ -663,11 +733,7 @@ export default function AdminProduitsPage() {
                           className={inputClass}
                         >
                           <option value="">Aucune</option>
-                          {categories.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name}
-                            </option>
-                          ))}
+                          <CategoryOptions categories={categories} />
                         </select>
                       </label>
                       <label className={labelClass}>

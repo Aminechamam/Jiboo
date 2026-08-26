@@ -27,6 +27,8 @@ export function ProductCard({
 
   const outOfStock = product.stock <= 0;
   const lowStock = !outOfStock && product.stock <= product.lowStockThreshold;
+  // La compatibilité véhicule n'a de sens que pour le rayon Pièces Auto.
+  const isPiecesAuto = product.category?.department?.slug === "pieces-auto";
 
   const handleAdd = (e: MouseEvent<HTMLAnchorElement>) => {
     e.preventDefault();
@@ -69,9 +71,11 @@ export function ProductCard({
           <h3 className="text-sm font-extrabold uppercase leading-snug tracking-wide text-tn-black sm:text-base">
             {product.name}
           </h3>
-          <p className="hidden text-sm text-tn-black-soft/80 sm:block">
-            {product.compatibility}
-          </p>
+          {isPiecesAuto && (
+            <p className="hidden text-sm text-tn-black-soft/80 sm:block">
+              {product.compatibility}
+            </p>
+          )}
           <p className="hidden text-xs text-tn-black-soft/60 sm:block">
             Réf. {product.reference}
           </p>
