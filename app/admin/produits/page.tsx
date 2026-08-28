@@ -26,6 +26,7 @@ import {
   type ImportSummary,
   type RowIssue,
 } from "@/lib/admin-products";
+import { fetchSuppliers, type Supplier } from "@/lib/admin-suppliers";
 
 type Draft = {
   reference: string;
@@ -35,6 +36,7 @@ type Draft = {
   stock: string;
   categoryId: string;
   photoUrl: string;
+  supplierId: string;
 };
 
 function productToDraft(product: Product): Draft {
@@ -46,6 +48,7 @@ function productToDraft(product: Product): Draft {
     stock: String(product.stock),
     categoryId: product.category?.id ?? "",
     photoUrl: product.photoUrl ?? "",
+    supplierId: product.supplierId ?? "",
   };
 }
 
@@ -57,6 +60,7 @@ const EMPTY_NEW_PRODUCT: Draft = {
   stock: "",
   categoryId: "",
   photoUrl: "",
+  supplierId: "",
 };
 
 /** Parses + validates a Draft's numeric fields. Returns an error message on
@@ -106,6 +110,20 @@ function CategoryOptions({ categories }: { categories: Category[] }) {
   );
 }
 
+/** Options d'un <select> de fournisseur — liste plate (pas de groupement,
+ *  contrairement aux catégories), triée par nom côté fetchSuppliers(). */
+function SupplierOptions({ suppliers }: { suppliers: Supplier[] }) {
+  return (
+    <>
+      {suppliers.map((s) => (
+        <option key={s.id} value={s.id}>
+          {s.name}
+        </option>
+      ))}
+    </>
+  );
+}
+
 function StockBadge({ product }: { product: Product }) {
   const outOfStock = product.stock <= 0;
   const lowStock = !outOfStock && product.stock <= product.lowStockThreshold;
@@ -141,8 +159,15 @@ export default function AdminProduitsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Filtres de la liste — client-side uniquement, pensés pour retrouver
+  // rapidement le lot d'un fournisseur donné (ex. "Rekik") pendant le
+  // rattachement manuel des photos après un import CSV.
+  const [supplierFilter, setSupplierFilter] = useState<string>("");
+  const [onlyMissingPhoto, setOnlyMissingPhoto] = useState(false);
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -175,23 +200,37 @@ export default function AdminProduitsPage() {
   // Client-side only: these fetches run in the admin's browser, never during
   // `next build`'s prerendering, which is network-sandboxed in this project.
   // Reads reuse the public fetchProducts()/fetchCategories() — RLS only
-  // restricts writes, not reads, on these tables.
+  // restricts writes, not reads, on these tables. fetchSuppliers() is the
+  // exception — suppliers has no anon SELECT policy at all, so it needs the
+  // signed-in admin's access token (AdminShell guarantees `session` is set
+  // by the time this page renders).
   const loadAll = useCallback(() => {
+    if (!session) return;
     setLoading(true);
     setLoadError(null);
-    Promise.all([fetchProducts(), fetchCategories(), fetchDepartments()])
-      .then(([p, c, d]) => {
+    Promise.all([
+      fetchProducts(),
+      fetchCategories(),
+      fetchDepartments(),
+      fetchSuppliers(session.accessToken),
+    ])
+      .then(([p, c, d, s]) => {
         setProducts(p);
         setCategories(c);
         setDepartments(d);
+        setSuppliers(s);
         setNewProduct((prev) => ({ ...prev, categoryId: prev.categoryId || c[0]?.id || "" }));
         setCsvDepartmentId((prev) => prev || d[0]?.id || "");
       })
-      .catch(() => {
+      .catch((err) => {
+        if (err instanceof SessionExpiredError) {
+          handleSessionExpired();
+          return;
+        }
         setLoadError("Impossible de charger les produits. Veuillez réessayer.");
       })
       .finally(() => setLoading(false));
-  }, []);
+  }, [session, handleSessionExpired]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -241,6 +280,7 @@ export default function AdminProduitsPage() {
               stock: nextStock,
               category: nextCategory,
               photoUrl: draft.photoUrl.trim() || null,
+              supplierId: draft.supplierId || null,
             }
           : p
       )
@@ -255,6 +295,7 @@ export default function AdminProduitsPage() {
         stock: nextStock,
         category_id: draft.categoryId || null,
         photo_url: draft.photoUrl.trim() || null,
+        supplier_id: draft.supplierId || null,
       });
       setExpandedId(null);
       setDraft(null);
@@ -339,6 +380,7 @@ export default function AdminProduitsPage() {
         stock: Number(newProduct.stock),
         category_id: newProduct.categoryId || null,
         photo_url: newProduct.photoUrl.trim() || null,
+        supplier_id: newProduct.supplierId || null,
       });
 
       const category = categories.find((c) => c.id === created.category_id) ?? null;
@@ -353,11 +395,12 @@ export default function AdminProduitsPage() {
         photoUrl: created.photo_url,
         lowStockThreshold: created.low_stock_threshold,
         category,
+        supplierId: created.supplier_id,
         compatibility: isPiecesAuto ? "Toutes marques" : "",
         compatibilityList: [],
       };
       setProducts((prev) => [product, ...prev]);
-      setNewProduct({ ...EMPTY_NEW_PRODUCT, categoryId: newProduct.categoryId });
+      setNewProduct({ ...EMPTY_NEW_PRODUCT, categoryId: newProduct.categoryId, supplierId: newProduct.supplierId });
     } catch (err) {
       if (err instanceof SessionExpiredError) {
         handleSessionExpired();
@@ -404,6 +447,7 @@ export default function AdminProduitsPage() {
         session.accessToken,
         rows,
         categories,
+        suppliers,
         chosenDepartment,
         (done, total) => {
           setCsvProgress({ done, total });
@@ -424,6 +468,15 @@ export default function AdminProduitsPage() {
       setCsvBusy(false);
     }
   };
+
+  const visibleProducts = products.filter((product) => {
+    if (supplierFilter === "none" && product.supplierId) return false;
+    if (supplierFilter && supplierFilter !== "none" && product.supplierId !== supplierFilter) {
+      return false;
+    }
+    if (onlyMissingPhoto && product.photoUrl) return false;
+    return true;
+  });
 
   return (
     <div>
@@ -472,6 +525,17 @@ export default function AdminProduitsPage() {
             >
               <option value="">Aucune</option>
               <CategoryOptions categories={categories} />
+            </select>
+          </label>
+          <label className={labelClass}>
+            Fournisseur
+            <select
+              value={newProduct.supplierId}
+              onChange={(e) => setNewProduct((p) => ({ ...p, supplierId: e.target.value }))}
+              className={inputClass}
+            >
+              <option value="">Aucun</option>
+              <SupplierOptions suppliers={suppliers} />
             </select>
           </label>
           <label className={labelClass}>
@@ -546,10 +610,14 @@ export default function AdminProduitsPage() {
         </code>
         <p className="mt-2 text-xs text-tn-black-soft/70">
           <code className="font-bold">reference</code> et <code className="font-bold">name</code>{" "}
-          sont obligatoires. <code className="font-bold">category</code> est créée automatiquement
-          si elle n&apos;existe pas encore. <code className="font-bold">photo_url</code> est
-          optionnelle. Les lignes sont importées une par une&nbsp;: une ligne en erreur (référence
-          en double, prix invalide…) n&apos;empêche pas les autres d&apos;être importées.
+          sont obligatoires. <code className="font-bold">category</code> et{" "}
+          <code className="font-bold">supplier</code> sont créés automatiquement s&apos;ils
+          n&apos;existent pas encore. <code className="font-bold">photo_url</code> est optionnelle.
+          Les lignes sont importées une par une&nbsp;: une ligne en erreur (prix invalide,
+          stock invalide…) n&apos;empêche pas les autres d&apos;être importées. Une{" "}
+          <code className="font-bold">reference</code> déjà présente dans le catalogue n&apos;est
+          plus un échec&nbsp;: le produit existant est mis à jour avec les valeurs de la ligne
+          (utile pour réimporter le même fichier après avoir ajouté les <code className="font-bold">photo_url</code>).
         </p>
 
         <label className={`${labelClass} mt-4 max-w-xs`}>
@@ -612,8 +680,9 @@ export default function AdminProduitsPage() {
         {csvSummary && (
           <div className="mt-4 rounded-lg border-2 border-tn-black bg-tn-offwhite p-3">
             <p className="text-xs font-black uppercase tracking-wide text-tn-black">
-              {csvSummary.successCount} produit{csvSummary.successCount > 1 ? "s" : ""} importé
-              {csvSummary.successCount > 1 ? "s" : ""}
+              {csvSummary.createdCount} créé{csvSummary.createdCount > 1 ? "s" : ""}
+              {csvSummary.updatedCount > 0 &&
+                `, ${csvSummary.updatedCount} mis à jour`}
               {csvSummary.failures.length > 0 &&
                 ` — ${csvSummary.failures.length} échec${csvSummary.failures.length > 1 ? "s" : ""}`}
             </p>
@@ -630,6 +699,33 @@ export default function AdminProduitsPage() {
           </div>
         )}
       </div>
+
+      {/* FILTERS */}
+      {!loading && !loadError && products.length > 0 && (
+        <div className="mb-4 flex flex-wrap items-end gap-3 rounded-2xl border-2 border-tn-black bg-tn-white p-4 shadow-[3px_3px_0_0_var(--tn-black)]">
+          <label className={`${labelClass} min-w-[200px]`}>
+            Filtrer par fournisseur
+            <select
+              value={supplierFilter}
+              onChange={(e) => setSupplierFilter(e.target.value)}
+              className={inputClass}
+            >
+              <option value="">Tous les fournisseurs</option>
+              <option value="none">Sans fournisseur</option>
+              <SupplierOptions suppliers={suppliers} />
+            </select>
+          </label>
+          <label className="flex items-center gap-2 pb-2.5 text-xs font-black uppercase tracking-wide text-tn-black-soft/70">
+            <input
+              type="checkbox"
+              checked={onlyMissingPhoto}
+              onChange={(e) => setOnlyMissingPhoto(e.target.checked)}
+              className="size-4 accent-tn-red"
+            />
+            Sans photo uniquement
+          </label>
+        </div>
+      )}
 
       {/* PRODUCT LIST */}
       {loading ? (
@@ -658,10 +754,17 @@ export default function AdminProduitsPage() {
             Aucun produit pour le moment.
           </p>
         </div>
+      ) : visibleProducts.length === 0 ? (
+        <div className="rounded-xl border-2 border-dashed border-tn-black/30 bg-tn-white p-12 text-center">
+          <p className="text-sm font-bold uppercase tracking-wide text-tn-black-soft/60">
+            Aucun produit ne correspond à ce filtre.
+          </p>
+        </div>
       ) : (
         <div className="flex flex-col gap-3">
-          {products.map((product) => {
+          {visibleProducts.map((product) => {
             const isExpanded = expandedId === product.id;
+            const supplierName = suppliers.find((s) => s.id === product.supplierId)?.name;
             return (
               <div
                 key={product.id}
@@ -687,6 +790,7 @@ export default function AdminProduitsPage() {
                       </span>
                       <span className="text-xs text-tn-black-soft/60">
                         Réf. {product.reference} — {product.category?.name ?? "Autre"}
+                        {supplierName ? ` — ${supplierName}` : ""}
                       </span>
                     </div>
                   </div>
@@ -734,6 +838,19 @@ export default function AdminProduitsPage() {
                         >
                           <option value="">Aucune</option>
                           <CategoryOptions categories={categories} />
+                        </select>
+                      </label>
+                      <label className={labelClass}>
+                        Fournisseur
+                        <select
+                          value={draft.supplierId}
+                          onChange={(e) =>
+                            setDraft((d) => (d ? { ...d, supplierId: e.target.value } : d))
+                          }
+                          className={inputClass}
+                        >
+                          <option value="">Aucun</option>
+                          <SupplierOptions suppliers={suppliers} />
                         </select>
                       </label>
                       <label className={labelClass}>

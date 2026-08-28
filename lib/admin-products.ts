@@ -17,6 +17,7 @@
 import { SUPABASE_URL, type Category, type Department } from "./supabase";
 import { authedHeaders } from "./admin-auth";
 import { SessionExpiredError } from "./admin-data";
+import { createSupplier, type Supplier } from "./admin-suppliers";
 
 // Re-exported so pages that only touch this file don't also need to import
 // directly from lib/admin-data.ts for the common "session died mid-action"
@@ -44,6 +45,9 @@ export type ProductPatch = Partial<{
   stock: number;
   category_id: string | null;
   photo_url: string | null;
+  /** Fournisseur ayant livré ce produit — indépendant de category_id, voir
+   *  le commentaire sur `Product.supplierId` dans lib/supabase.ts. */
+  supplier_id: string | null;
 }>;
 
 export async function updateProduct(
@@ -75,6 +79,7 @@ export type ProductInput = {
   stock: number;
   category_id: string | null;
   photo_url: string | null;
+  supplier_id: string | null;
 };
 
 /** Raw columns PostgREST hands back for a POST with
@@ -92,6 +97,7 @@ export type CreatedProductRow = {
   category_id: string | null;
   photo_url: string | null;
   low_stock_threshold: number;
+  supplier_id: string | null;
 };
 
 export async function createProduct(
@@ -122,6 +128,7 @@ export async function createProduct(
     category_id: string | null;
     photo_url: string | null;
     low_stock_threshold: number;
+    supplier_id: string | null;
   }[];
   const row = rows[0];
   if (!row) throw new Error("Réponse invalide du serveur lors de la création du produit.");
@@ -135,7 +142,28 @@ export async function createProduct(
     category_id: row.category_id,
     photo_url: row.photo_url,
     low_stock_threshold: row.low_stock_threshold,
+    supplier_id: row.supplier_id,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Lookup by reference — used by the CSV bulk import's upsert path (see
+// bulkImportProducts below) to find the existing row to PATCH when a create
+// hits a duplicate `reference`.
+// ---------------------------------------------------------------------------
+
+export async function findProductIdByReference(
+  accessToken: string,
+  reference: string
+): Promise<string | null> {
+  const url = `${SUPABASE_URL}/rest/v1/products?reference=eq.${encodeURIComponent(reference)}&select=id&limit=1`;
+  const res = await fetch(url, { headers: authedHeaders(accessToken) });
+  if (!res.ok) {
+    if (res.status === 401) throw new SessionExpiredError();
+    throw new Error(await parseErrorMessage(res, "Impossible de retrouver ce produit."));
+  }
+  const rows = (await res.json()) as { id: string }[];
+  return rows[0]?.id ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -226,6 +254,35 @@ export async function findOrCreateCategory(
 }
 
 // ---------------------------------------------------------------------------
+// Supplier find-or-create (used by CSV import — matched by name,
+// case-insensitively, against an already-fetched list; if none match, a new
+// supplier is created with just a name via the suppliers_insert_staff RLS
+// policy — the rest of its fields (contact, phone...) can be filled in later
+// from the Fournisseurs page).
+// ---------------------------------------------------------------------------
+
+export async function findOrCreateSupplier(
+  accessToken: string,
+  name: string,
+  existingSuppliers: Supplier[]
+): Promise<Supplier> {
+  const trimmed = name.trim();
+  const match = existingSuppliers.find(
+    (s) => s.name.trim().toLowerCase() === trimmed.toLowerCase()
+  );
+  if (match) return match;
+
+  return createSupplier(accessToken, {
+    name: trimmed,
+    contact_name: null,
+    phone: null,
+    email: null,
+    address: null,
+    notes: null,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // CSV parsing — hand-written, no external library (offline install, none
 // available). Handles quoted fields (commas/newlines inside quotes, ""
 // escaping for a literal quote) which is enough for a straightforward
@@ -309,6 +366,7 @@ export type CsvImportRow = {
   stock: number;
   categoryName: string;
   photoUrl: string | null;
+  supplierName: string;
 };
 
 export type RowIssue = {
@@ -325,7 +383,8 @@ export type ParseCsvResult = {
 const REQUIRED_HEADERS = ["reference", "name", "price", "stock", "category"] as const;
 
 /** Expected header row, shown in the admin UI hint block. */
-export const CSV_EXPECTED_HEADER = "reference,name,description,price,stock,category,photo_url";
+export const CSV_EXPECTED_HEADER =
+  "reference,name,description,price,stock,category,photo_url,supplier";
 
 export function parseProductsCsv(text: string): ParseCsvResult {
   const table = parseCsvTable(text);
@@ -358,6 +417,7 @@ export function parseProductsCsv(text: string): ParseCsvResult {
     stock: colIndex("stock"),
     category: colIndex("category"),
     photoUrl: colIndex("photo_url"),
+    supplier: colIndex("supplier"),
   };
 
   const rows: CsvImportRow[] = [];
@@ -375,6 +435,7 @@ export function parseProductsCsv(text: string): ParseCsvResult {
     const stockRaw = (raw[idx.stock] ?? "").trim();
     const categoryName = (raw[idx.category] ?? "").trim();
     const photoUrl = idx.photoUrl >= 0 ? (raw[idx.photoUrl] ?? "").trim() || null : null;
+    const supplierName = idx.supplier >= 0 ? (raw[idx.supplier] ?? "").trim() : "";
 
     if (!reference || !name) {
       errors.push({ row: rowNumber, reference, reason: "Référence et nom sont obligatoires." });
@@ -393,7 +454,17 @@ export function parseProductsCsv(text: string): ParseCsvResult {
       continue;
     }
 
-    rows.push({ row: rowNumber, reference, name, description, price, stock, categoryName, photoUrl });
+    rows.push({
+      row: rowNumber,
+      reference,
+      name,
+      description,
+      price,
+      stock,
+      categoryName,
+      photoUrl,
+      supplierName,
+    });
   }
 
   return { rows, errors };
@@ -411,15 +482,27 @@ export function parseProductsCsv(text: string): ParseCsvResult {
 // ---------------------------------------------------------------------------
 
 export type ImportSummary = {
+  /** Total rows imported successfully — createdCount + updatedCount. Kept
+   *  for callers that only care about the total. */
   successCount: number;
+  /** New products inserted. */
+  createdCount: number;
+  /** Existing products (matched by reference) whose fields were overwritten
+   *  by this import instead of failing as a duplicate — see the upsert
+   *  comment on bulkImportProducts below. */
+  updatedCount: number;
   failures: RowIssue[];
 };
+
+function isDuplicateReferenceError(message: string): boolean {
+  return /duplicate key|already exists|unique constraint/i.test(message);
+}
 
 /** Turns a raw PostgREST/Postgres error message into a short, friendlier
  *  French reason for the per-row import summary — falls back to the raw
  *  message when it doesn't recognize the shape. */
 function describeImportError(message: string): string {
-  if (/duplicate key|already exists|unique constraint/i.test(message)) {
+  if (isDuplicateReferenceError(message)) {
     return "Référence déjà existante.";
   }
   if (/violates check constraint/i.test(message)) {
@@ -431,16 +514,33 @@ function describeImportError(message: string): string {
   return message;
 }
 
+/** Bulk import — sequential, one row at a time, so a single bad row doesn't
+ *  abort the whole batch. Each row's error is caught individually.
+ *
+ *  Upsert by reference: a row whose `reference` already exists in the
+ *  catalogue no longer fails the row — it PATCHes the existing product with
+ *  this row's values instead (name, description, price, stock, category,
+ *  photo_url, supplier). This is what makes it possible to re-import the
+ *  same supplier list a second time (e.g. after adding photo_url values in
+ *  bulk) without hitting "référence déjà existante" on every line.
+ *
+ *  `department` is the rayon to use for any *new* category this batch needs
+ *  to create (an admin picks it once for the whole file before importing —
+ *  see the CSV import UI). Categories/suppliers that already exist keep
+ *  their own department/details untouched. */
 export async function bulkImportProducts(
   accessToken: string,
   rows: CsvImportRow[],
   categories: Category[],
+  suppliers: Supplier[],
   department: Department,
   onProgress?: (done: number, total: number) => void
 ): Promise<ImportSummary> {
   const workingCategories = [...categories];
+  const workingSuppliers = [...suppliers];
   const failures: RowIssue[] = [];
-  let successCount = 0;
+  let createdCount = 0;
+  let updatedCount = 0;
 
   for (let i = 0; i < rows.length; i += 1) {
     const row = rows[i];
@@ -459,16 +559,43 @@ export async function bulkImportProducts(
         categoryId = category.id;
       }
 
-      await createProduct(accessToken, {
-        reference: row.reference,
+      let supplierId: string | null = null;
+      if (row.supplierName) {
+        const supplier = await findOrCreateSupplier(accessToken, row.supplierName, workingSuppliers);
+        if (!workingSuppliers.some((s) => s.id === supplier.id)) {
+          workingSuppliers.push(supplier);
+        }
+        supplierId = supplier.id;
+      }
+
+      // Every field is always set below (unlike ProductPatch, which is a
+      // Partial<> meant for single-field row edits) — typed without
+      // `reference` so it slots into both createProduct (full ProductInput,
+      // reference added back below) and updateProduct (accepts the looser
+      // ProductPatch) on the two paths below.
+      const patch: Omit<ProductInput, "reference"> = {
         name: row.name,
         description: row.description,
         price: row.price,
         stock: row.stock,
         category_id: categoryId,
         photo_url: row.photoUrl,
-      });
-      successCount += 1;
+        supplier_id: supplierId,
+      };
+
+      try {
+        await createProduct(accessToken, { reference: row.reference, ...patch });
+        createdCount += 1;
+      } catch (err) {
+        if (err instanceof SessionExpiredError) throw err;
+        const message = err instanceof Error ? err.message : "Erreur inconnue.";
+        if (!isDuplicateReferenceError(message)) throw err;
+
+        const existingId = await findProductIdByReference(accessToken, row.reference);
+        if (!existingId) throw err; // Duplicate per Postgres but not found via RLS — surface the original error.
+        await updateProduct(accessToken, existingId, patch);
+        updatedCount += 1;
+      }
     } catch (err) {
       if (err instanceof SessionExpiredError) throw err;
       const message = err instanceof Error ? err.message : "Erreur inconnue.";
@@ -478,5 +605,5 @@ export async function bulkImportProducts(
     }
   }
 
-  return { successCount, failures };
+  return { successCount: createdCount + updatedCount, createdCount, updatedCount, failures };
 }

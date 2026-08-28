@@ -68,6 +68,12 @@ export type Product = {
   photoUrl: string | null;
   lowStockThreshold: number;
   category: Category | null;
+  /** Fournisseur ayant livré ce produit — indépendant de `category`, qui
+   *  décrit le type de pièce. Utilisé côté admin uniquement (filtre, tri
+   *  par lot) ; pas de jointure sur `suppliers` ici (RLS anon-only sur
+   *  cette table), juste l'id brut, résolu en nom via `fetchSuppliers()`
+   *  côté admin. */
+  supplierId: string | null;
   /** Short display summary, e.g. "Peugeot 208 / Golf 7". Vide (pas "Toutes
    *  marques") en dehors du rayon Pièces Auto, où la compatibilité véhicule
    *  n'a pas de sens. */
@@ -86,6 +92,7 @@ type RawProduct = {
   photo_url: string | null;
   low_stock_threshold: number;
   categories: RawCategory | null;
+  supplier_id: string | null;
   product_compatibility: ProductCompatibility[] | null;
 };
 
@@ -124,6 +131,7 @@ function mapProduct(row: RawProduct): Product {
     photoUrl: row.photo_url,
     lowStockThreshold: row.low_stock_threshold,
     category,
+    supplierId: row.supplier_id,
     compatibility: isPiecesAuto ? buildCompatibility(row.product_compatibility) : "",
     compatibilityList: row.product_compatibility ?? [],
   };
@@ -131,7 +139,7 @@ function mapProduct(row: RawProduct): Product {
 
 export async function fetchProducts(): Promise<Product[]> {
   const url =
-    `${SUPABASE_URL}/rest/v1/products?select=id,reference,name,description,price,stock,photo_url,low_stock_threshold,` +
+    `${SUPABASE_URL}/rest/v1/products?select=id,reference,name,description,price,stock,photo_url,low_stock_threshold,supplier_id,` +
     `categories(id,name,departments(id,name,slug)),product_compatibility(make,model,year_from,year_to,engine)&order=created_at.asc`;
 
   const res = await fetch(url, { headers });
@@ -144,7 +152,7 @@ export async function fetchProducts(): Promise<Product[]> {
 
 export async function fetchProductById(id: string): Promise<Product | null> {
   const url =
-    `${SUPABASE_URL}/rest/v1/products?id=eq.${id}&select=id,reference,name,description,price,stock,photo_url,low_stock_threshold,` +
+    `${SUPABASE_URL}/rest/v1/products?id=eq.${id}&select=id,reference,name,description,price,stock,photo_url,low_stock_threshold,supplier_id,` +
     `categories(id,name,departments(id,name,slug)),product_compatibility(make,model,year_from,year_to,engine)`;
 
   const res = await fetch(url, { headers });
