@@ -17,12 +17,14 @@ export type CategoryGroup = { id: string; name: string; ids: string[] };
 /**
  * Groups categories that share a (normalized) name into a single entry.
  *
- * The `categories` table carries duplicate rows for some names (e.g. two
+ * The `categories` table used to carry duplicate rows for some names (two
  * separate "Éclairage" rows, two "Électricité" rows) left over from merging
- * the two Supabase projects during consolidation. Every place that lists or
- * filters by category should go through this so a duplicate row doesn't
- * show up twice — the underlying duplicate rows are still in Supabase and
- * should eventually be cleaned up there too.
+ * two Supabase projects during consolidation. Those duplicate rows were
+ * cleaned up directly in Supabase (verified 2026-08-28: one row per name).
+ * This function is kept as a defensive safeguard, not a workaround for a
+ * known issue — category imports (see lib CSV import) could reintroduce a
+ * duplicate name, and grouping here means the UI never shows it twice even
+ * if that happens again.
  */
 export function dedupeCategories(categories: Category[]): CategoryGroup[] {
   const groups = new Map<string, CategoryGroup>();
