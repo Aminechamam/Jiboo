@@ -192,7 +192,7 @@ export default function ProductDetailClient() {
                 <p className="text-xs font-bold uppercase tracking-wide text-tn-black-soft/50">
                   Réf. {product.reference}
                 </p>
-                <p className="text-sm leading-relaxed text-tn-black-soft">{product.description}</p>
+                <p className="whitespace-pre-line text-sm leading-relaxed text-tn-black-soft">{product.description}</p>
 
                 <div className="flex items-center gap-3">
                   {outOfStock ? (
