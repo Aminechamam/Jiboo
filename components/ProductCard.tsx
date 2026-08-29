@@ -79,9 +79,6 @@ export function ProductCard({
           <p className="hidden text-xs text-tn-black-soft/60 sm:block">
             Réf. {product.reference}
           </p>
-          <p className="line-clamp-2 hidden whitespace-pre-line text-sm text-tn-black-soft sm:block">
-            {product.description}
-          </p>
         </div>
       </Link>
 
