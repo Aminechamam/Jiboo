@@ -32,6 +32,8 @@ type Draft = {
   reference: string;
   name: string;
   description: string;
+  /** Voir le commentaire sur `Product.cardSubtitle` dans lib/supabase.ts. */
+  cardSubtitle: string;
   price: string;
   stock: string;
   categoryId: string;
@@ -44,6 +46,7 @@ function productToDraft(product: Product): Draft {
     reference: product.reference,
     name: product.name,
     description: product.description,
+    cardSubtitle: product.cardSubtitle ?? "",
     price: String(product.price),
     stock: String(product.stock),
     categoryId: product.category?.id ?? "",
@@ -56,6 +59,7 @@ const EMPTY_NEW_PRODUCT: Draft = {
   reference: "",
   name: "",
   description: "",
+  cardSubtitle: "",
   price: "",
   stock: "",
   categoryId: "",
@@ -276,6 +280,7 @@ export default function AdminProduitsPage() {
               reference: draft.reference.trim(),
               name: draft.name.trim(),
               description: draft.description.trim(),
+              cardSubtitle: draft.cardSubtitle.trim() || null,
               price: nextPrice,
               stock: nextStock,
               category: nextCategory,
@@ -291,6 +296,7 @@ export default function AdminProduitsPage() {
         reference: draft.reference.trim(),
         name: draft.name.trim(),
         description: draft.description.trim(),
+        card_subtitle: draft.cardSubtitle.trim() || null,
         price: nextPrice,
         stock: nextStock,
         category_id: draft.categoryId || null,
@@ -376,6 +382,7 @@ export default function AdminProduitsPage() {
         reference: newProduct.reference.trim(),
         name: newProduct.name.trim(),
         description: newProduct.description.trim(),
+        card_subtitle: newProduct.cardSubtitle.trim() || null,
         price: Number(newProduct.price),
         stock: Number(newProduct.stock),
         category_id: newProduct.categoryId || null,
@@ -390,6 +397,7 @@ export default function AdminProduitsPage() {
         reference: created.reference,
         name: created.name,
         description: created.description,
+        cardSubtitle: created.card_subtitle,
         price: created.price,
         stock: created.stock,
         photoUrl: created.photo_url,
@@ -579,6 +587,15 @@ export default function AdminProduitsPage() {
               className={`${inputClass} resize-none`}
             />
           </label>
+          <label className={`${labelClass} sm:col-span-2 lg:col-span-3`}>
+            Accroche carte produit (affichée sur la carte catalogue/accueil, à la place de la référence)
+            <input
+              value={newProduct.cardSubtitle}
+              onChange={(e) => setNewProduct((p) => ({ ...p, cardSubtitle: e.target.value }))}
+              placeholder="Ex. : Compatible toutes marques — livraison 24h"
+              className={inputClass}
+            />
+          </label>
         </div>
 
         {createError && (
@@ -612,7 +629,9 @@ export default function AdminProduitsPage() {
           <code className="font-bold">reference</code> et <code className="font-bold">name</code>{" "}
           sont obligatoires. <code className="font-bold">category</code> et{" "}
           <code className="font-bold">supplier</code> sont créés automatiquement s&apos;ils
-          n&apos;existent pas encore. <code className="font-bold">photo_url</code> est optionnelle.
+          n&apos;existent pas encore. <code className="font-bold">photo_url</code> est optionnelle.{" "}
+          <code className="font-bold">card_subtitle</code> est optionnelle : c&apos;est le texte
+          affiché sur la carte produit (catalogue/accueil) à la place de la référence.
           Les lignes sont importées une par une&nbsp;: une ligne en erreur (prix invalide,
           stock invalide…) n&apos;empêche pas les autres d&apos;être importées. Une{" "}
           <code className="font-bold">reference</code> déjà présente dans le catalogue n&apos;est
@@ -892,6 +911,17 @@ export default function AdminProduitsPage() {
                             setDraft((d) => (d ? { ...d, description: e.target.value } : d))
                           }
                           className={`${inputClass} resize-none`}
+                        />
+                      </label>
+                      <label className={`${labelClass} sm:col-span-2 lg:col-span-3`}>
+                        Accroche carte produit (affichée sur la carte catalogue/accueil, à la place de la référence)
+                        <input
+                          value={draft.cardSubtitle}
+                          onChange={(e) =>
+                            setDraft((d) => (d ? { ...d, cardSubtitle: e.target.value } : d))
+                          }
+                          placeholder="Ex. : Compatible toutes marques — livraison 24h"
+                          className={inputClass}
                         />
                       </label>
                     </div>

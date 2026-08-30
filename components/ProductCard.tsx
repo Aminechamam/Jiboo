@@ -76,9 +76,11 @@ export function ProductCard({
               {product.compatibility}
             </p>
           )}
-          <p className="hidden text-xs text-tn-black-soft/60 sm:block">
-            Réf. {product.reference}
-          </p>
+          {product.cardSubtitle && (
+            <p className="hidden text-xs text-tn-black-soft/60 sm:block">
+              {product.cardSubtitle}
+            </p>
+          )}
         </div>
       </Link>
 

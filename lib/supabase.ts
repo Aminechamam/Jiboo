@@ -80,6 +80,11 @@ export type Product = {
   compatibility: string;
   /** Full per-vehicle compatibility rows — used by the product detail page. */
   compatibilityList: ProductCompatibility[];
+  /** Texte court affiché sur la carte produit (catalogue, page d'accueil)
+   *  avant que le visiteur ne clique dessus — remplace la référence à cet
+   *  emplacement. Distinct de `description`, qui reste le texte complet
+   *  affiché sur la fiche produit. Null tant que l'admin ne l'a pas rempli. */
+  cardSubtitle: string | null;
 };
 
 type RawProduct = {
@@ -94,6 +99,7 @@ type RawProduct = {
   categories: RawCategory | null;
   supplier_id: string | null;
   product_compatibility: ProductCompatibility[] | null;
+  card_subtitle: string | null;
 };
 
 type RawDeliveryZone = {
@@ -134,12 +140,13 @@ function mapProduct(row: RawProduct): Product {
     supplierId: row.supplier_id,
     compatibility: isPiecesAuto ? buildCompatibility(row.product_compatibility) : "",
     compatibilityList: row.product_compatibility ?? [],
+    cardSubtitle: row.card_subtitle,
   };
 }
 
 export async function fetchProducts(): Promise<Product[]> {
   const url =
-    `${SUPABASE_URL}/rest/v1/products?select=id,reference,name,description,price,stock,photo_url,low_stock_threshold,supplier_id,` +
+    `${SUPABASE_URL}/rest/v1/products?select=id,reference,name,description,price,stock,photo_url,low_stock_threshold,supplier_id,card_subtitle,` +
     `categories(id,name,departments(id,name,slug)),product_compatibility(make,model,year_from,year_to,engine)&order=created_at.asc`;
 
   const res = await fetch(url, { headers });
@@ -152,7 +159,7 @@ export async function fetchProducts(): Promise<Product[]> {
 
 export async function fetchProductById(id: string): Promise<Product | null> {
   const url =
-    `${SUPABASE_URL}/rest/v1/products?id=eq.${id}&select=id,reference,name,description,price,stock,photo_url,low_stock_threshold,supplier_id,` +
+    `${SUPABASE_URL}/rest/v1/products?id=eq.${id}&select=id,reference,name,description,price,stock,photo_url,low_stock_threshold,supplier_id,card_subtitle,` +
     `categories(id,name,departments(id,name,slug)),product_compatibility(make,model,year_from,year_to,engine)`;
 
   const res = await fetch(url, { headers });
