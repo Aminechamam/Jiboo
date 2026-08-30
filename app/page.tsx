@@ -77,7 +77,7 @@ export default function Home() {
       <main className="flex-1">
         {/* HERO */}
         <section className="relative overflow-hidden bg-tn-black pb-14 pt-10 sm:pb-32 sm:pt-24">
-          <div className="tn-diagonal-bottom absolute inset-x-0 bottom-0 h-24 bg-tn-red" />
+          <div className="tn-diagonal-bottom absolute inset-x-0 bottom-0 h-10 bg-tn-red sm:h-24" />
           <div
             className="absolute -right-24 top-0 hidden h-full w-1/2 bg-tn-red/90 md:block"
             style={{ clipPath: "polygon(30% 0, 100% 0, 100% 100%, 0 100%)" }}
