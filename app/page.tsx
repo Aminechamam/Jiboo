@@ -76,7 +76,7 @@ export default function Home() {
       <Header />
       <main className="flex-1">
         {/* HERO */}
-        <section className="relative overflow-hidden bg-tn-black pb-24 pt-16 sm:pb-32 sm:pt-24">
+        <section className="relative overflow-hidden bg-tn-black pb-14 pt-10 sm:pb-32 sm:pt-24">
           <div className="tn-diagonal-bottom absolute inset-x-0 bottom-0 h-24 bg-tn-red" />
           <div
             className="absolute -right-24 top-0 hidden h-full w-1/2 bg-tn-red/90 md:block"
@@ -92,17 +92,17 @@ export default function Home() {
               <span className="tn-ribbon inline-block bg-tn-amber px-4 py-1 text-xs font-black uppercase tracking-widest text-tn-black">
                 Nouveau catalogue 2026
               </span>
-              <h1 className="mt-6 text-4xl font-black uppercase leading-[1.05] tracking-wide text-tn-white sm:text-5xl lg:text-6xl">
+              <h1 className="mt-4 text-4xl font-black uppercase leading-[1.05] tracking-wide text-tn-white sm:mt-6 sm:text-5xl lg:text-6xl">
                 Les pièces qui <span className="text-tn-red">boostent</span>{" "}
                 <span className="text-tn-amber">votre moteur</span>
               </h1>
-              <p className="mt-6 max-w-lg text-base text-tn-white/70 sm:text-lg">
+              <p className="mt-3 max-w-lg text-base text-tn-white/70 sm:mt-6 sm:text-lg">
                 Freinage, moteur, suspension, carrosserie&nbsp;: des pièces
                 détachées certifiées pour toutes les marques, livrées vite,
                 partout en Tunisie.
               </p>
 
-              <div className="mt-8 flex flex-wrap gap-4">
+              <div className="mt-5 flex flex-wrap gap-3 sm:mt-8 sm:gap-4">
                 <Link
                   href="/catalogue?rayon=pieces-auto"
                   className="rounded-lg bg-tn-red px-6 py-3 text-sm font-black uppercase tracking-wide text-tn-white transition-all duration-200 hover:scale-105 hover:bg-tn-amber hover:text-tn-black active:scale-95"
@@ -117,7 +117,7 @@ export default function Home() {
                 </Link>
                 <a
                   href="#populaires"
-                  className="rounded-lg border-2 border-tn-white px-6 py-3 text-sm font-black uppercase tracking-wide text-tn-white transition-all duration-200 hover:scale-105 hover:border-tn-amber hover:text-tn-amber active:scale-95"
+                  className="hidden rounded-lg border-2 border-tn-white px-6 py-3 text-sm font-black uppercase tracking-wide text-tn-white transition-all duration-200 hover:scale-105 hover:border-tn-amber hover:text-tn-amber active:scale-95 sm:inline-block"
                 >
                   Produits populaires
                 </a>
