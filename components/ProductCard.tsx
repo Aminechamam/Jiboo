@@ -70,17 +70,20 @@ export function ProductCard({
           </span>
           <h3 className="text-sm font-extrabold uppercase leading-snug tracking-wide text-tn-black sm:text-base">
             {product.name}
+            {product.cardSubtitle ? ` ${product.cardSubtitle}` : ""}
           </h3>
           {isPiecesAuto && (
             <p className="hidden text-sm text-tn-black-soft/80 sm:block">
               {product.compatibility}
             </p>
           )}
-          {product.cardSubtitle && (
-            <p className="hidden text-xs text-tn-black-soft/60 sm:block">
-              {product.cardSubtitle}
-            </p>
-          )}
+          <p
+            className={`hidden text-xs font-black uppercase tracking-wide sm:block ${
+              outOfStock ? "text-tn-black-soft/50" : "text-[#1a9d5c]"
+            }`}
+          >
+            {outOfStock ? "Hors stock" : "En stock"}
+          </p>
         </div>
       </Link>
 
