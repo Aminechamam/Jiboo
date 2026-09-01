@@ -7,6 +7,24 @@ import { formatPrice } from "@/lib/supabase";
 import { PartPlaceholder } from "./PartPlaceholder";
 import { useCart } from "./CartContext";
 
+// Normalise une chaîne pour comparaison (minuscules, accents retirés, espaces
+// supprimés) afin de détecter si le contenu de `cardSubtitle` est déjà
+// présent dans le nom du produit (ex. nom "CLE MIXTE 11mm / 80pcs" + accroche
+// "11 mm" -> la taille ne doit pas être répétée deux fois dans le titre).
+function normalizeForDedup(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, "");
+}
+
+function isSubtitleRedundant(name: string, subtitle: string): boolean {
+  const normalizedSubtitle = normalizeForDedup(subtitle);
+  if (!normalizedSubtitle) return true;
+  return normalizeForDedup(name).includes(normalizedSubtitle);
+}
+
 export function ProductCard({
   product,
   className = "",
@@ -70,7 +88,10 @@ export function ProductCard({
           </span>
           <h3 className="text-sm font-extrabold uppercase leading-snug tracking-wide text-tn-black sm:text-base">
             {product.name}
-            {product.cardSubtitle ? ` ${product.cardSubtitle}` : ""}
+            {product.cardSubtitle &&
+            !isSubtitleRedundant(product.name, product.cardSubtitle)
+              ? ` ${product.cardSubtitle}`
+              : ""}
           </h3>
           {isPiecesAuto && (
             <p className="hidden text-sm text-tn-black-soft/80 sm:block">
