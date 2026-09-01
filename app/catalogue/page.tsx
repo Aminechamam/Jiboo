@@ -15,8 +15,10 @@ import {
   type Product,
 } from "@/lib/supabase";
 import { dedupeCategories, normalizeText } from "@/lib/categories";
+import { distinctMakes, distinctModels, productMatchesVehicle, yearRangeFor } from "@/lib/vehicle-filter";
 
 const ALL_CATEGORIES = "Toutes";
+const ALL_BRANDS = "Toutes";
 const DEFAULT_DEPARTMENT_SLUG = "pieces-auto";
 
 type SortKey = "default" | "price-asc" | "price-desc" | "name-asc";
@@ -43,10 +45,20 @@ function CatalogueContent() {
 
   const [activeDepartmentSlug, setActiveDepartmentSlug] = useState<string>(DEFAULT_DEPARTMENT_SLUG);
   const [activeCategory, setActiveCategory] = useState<string>(ALL_CATEGORIES);
+  // Marque du fabricant (ex. Ferodo, Harden) — distinct de la compatibilité
+  // véhicule ci-dessous (qui porte sur la marque du VÉHICULE, pas du produit).
+  const [activeBrand, setActiveBrand] = useState<string>(ALL_BRANDS);
   const [searchTerm, setSearchTerm] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("default");
   const [isPending, setIsPending] = useState(false);
   const [renderKey, setRenderKey] = useState(0);
+
+  // Compatibilité véhicule : n'a de sens que dans le rayon Pièces Auto (voir
+  // le commentaire sur Product.compatibility dans lib/supabase.ts). Réinitialisé
+  // au changement de rayon par handleDepartmentChange ci-dessous.
+  const [vehicleMake, setVehicleMake] = useState<string | null>(null);
+  const [vehicleModel, setVehicleModel] = useState<string | null>(null);
+  const [vehicleYear, setVehicleYear] = useState<number | null>(null);
 
   // Sync ?rayon=, ?categorie= and ?q= from the URL. useSearchParams (unlike
   // reading window.location once on mount) returns a new object identity on
@@ -101,11 +113,20 @@ function CatalogueContent() {
   const handleDepartmentChange = (slug: string) => {
     setActiveDepartmentSlug(slug);
     setActiveCategory(ALL_CATEGORIES);
+    setActiveBrand(ALL_BRANDS);
+    setVehicleMake(null);
+    setVehicleModel(null);
+    setVehicleYear(null);
     setIsPending(true);
   };
 
   const handleCategoryChange = (id: string) => {
     setActiveCategory(id);
+    setIsPending(true);
+  };
+
+  const handleBrandChange = (value: string) => {
+    setActiveBrand(value || ALL_BRANDS);
     setIsPending(true);
   };
 
@@ -119,6 +140,31 @@ function CatalogueContent() {
     setIsPending(true);
   };
 
+  const handleVehicleMakeChange = (value: string) => {
+    setVehicleMake(value || null);
+    setVehicleModel(null);
+    setVehicleYear(null);
+    setIsPending(true);
+  };
+
+  const handleVehicleModelChange = (value: string) => {
+    setVehicleModel(value || null);
+    setVehicleYear(null);
+    setIsPending(true);
+  };
+
+  const handleVehicleYearChange = (value: string) => {
+    setVehicleYear(value ? Number(value) : null);
+    setIsPending(true);
+  };
+
+  const handleVehicleReset = () => {
+    setVehicleMake(null);
+    setVehicleModel(null);
+    setVehicleYear(null);
+    setIsPending(true);
+  };
+
   const activeDepartment = departments.find((d) => d.slug === activeDepartmentSlug) ?? null;
   const isQuincaillerie = activeDepartmentSlug === "quincaillerie";
 
@@ -129,6 +175,32 @@ function CatalogueContent() {
     () => products.filter((p) => p.category?.department?.slug === activeDepartmentSlug),
     [products, activeDepartmentSlug]
   );
+
+  // Marques/modèles/années disponibles dérivés des produits du rayon actif —
+  // vide côté Quincaillerie, donc le bloc de filtre ne s'affiche pas là-bas.
+  const availableMakes = useMemo(() => distinctMakes(departmentProducts), [departmentProducts]);
+  // Marques produit (fabricant) disponibles dans le rayon actif — distinct de
+  // availableMakes ci-dessus qui porte sur la marque du véhicule compatible.
+  const availableBrands = useMemo(() => {
+    const set = new Set<string>();
+    departmentProducts.forEach((p) => {
+      if (p.brand) set.add(p.brand);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "fr"));
+  }, [departmentProducts]);
+  const availableModels = useMemo(
+    () => (vehicleMake ? distinctModels(departmentProducts, vehicleMake) : []),
+    [departmentProducts, vehicleMake]
+  );
+  const availableYearRange = useMemo(
+    () => (vehicleMake ? yearRangeFor(departmentProducts, vehicleMake, vehicleModel) : null),
+    [departmentProducts, vehicleMake, vehicleModel]
+  );
+  const availableYears = useMemo(() => {
+    if (!availableYearRange) return [];
+    const { min, max } = availableYearRange;
+    return Array.from({ length: max - min + 1 }, (_, i) => max - i);
+  }, [availableYearRange]);
 
   // Duplicate category rows (e.g. two "Éclairage") collapse into one chip —
   // see lib/categories.ts. Scoped to the active department only.
@@ -156,14 +228,23 @@ function CatalogueContent() {
         ? departmentProducts
         : departmentProducts.filter((p) => p.category?.id && activeCategoryIds.includes(p.category.id));
 
+    const byBrand =
+      activeBrand === ALL_BRANDS ? byCategory : byCategory.filter((p) => p.brand === activeBrand);
+
+    const byVehicle = vehicleMake
+      ? byBrand.filter((p) =>
+          productMatchesVehicle(p, { make: vehicleMake, model: vehicleModel, year: vehicleYear })
+        )
+      : byBrand;
+
     const query = normalizeText(searchTerm.trim());
     const base = query
-      ? byCategory.filter((p) =>
+      ? byVehicle.filter((p) =>
           [p.name, p.reference, p.compatibility, p.description]
             .filter(Boolean)
             .some((field) => normalizeText(field as string).includes(query))
         )
-      : byCategory;
+      : byVehicle;
 
     const sorted = [...base];
     switch (sortKey) {
@@ -180,7 +261,17 @@ function CatalogueContent() {
         break;
     }
     return sorted;
-  }, [departmentProducts, activeCategory, activeCategoryIds, sortKey, searchTerm]);
+  }, [
+    departmentProducts,
+    activeCategory,
+    activeCategoryIds,
+    activeBrand,
+    sortKey,
+    searchTerm,
+    vehicleMake,
+    vehicleModel,
+    vehicleYear,
+  ]);
 
   return (
     <>
@@ -278,12 +369,112 @@ function CatalogueContent() {
               )}
             </div>
 
+            {!isQuincaillerie && availableMakes.length > 0 && (
+              <div className="mb-5 rounded-lg border-2 border-tn-black bg-tn-offwhite p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <h2 className="text-xs font-black uppercase tracking-widest text-tn-black-soft/60">
+                    Trouvez la pièce pour votre véhicule
+                  </h2>
+                  {(vehicleMake || vehicleModel || vehicleYear) && (
+                    <button
+                      type="button"
+                      onClick={handleVehicleReset}
+                      className="text-xs font-black uppercase tracking-wide text-tn-red hover:underline"
+                    >
+                      Réinitialiser
+                    </button>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div>
+                    <label htmlFor="vehicle-make" className="sr-only">
+                      Marque
+                    </label>
+                    <select
+                      id="vehicle-make"
+                      value={vehicleMake ?? ""}
+                      onChange={(e) => handleVehicleMakeChange(e.target.value)}
+                      className="w-full rounded-lg border-2 border-tn-black bg-tn-white px-3 py-2.5 text-xs font-black uppercase tracking-wide text-tn-black focus:outline-none"
+                    >
+                      <option value="">Marque</option>
+                      {availableMakes.map((make) => (
+                        <option key={make} value={make}>
+                          {make}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="vehicle-model" className="sr-only">
+                      Modèle
+                    </label>
+                    <select
+                      id="vehicle-model"
+                      value={vehicleModel ?? ""}
+                      onChange={(e) => handleVehicleModelChange(e.target.value)}
+                      disabled={!vehicleMake}
+                      className="w-full rounded-lg border-2 border-tn-black bg-tn-white px-3 py-2.5 text-xs font-black uppercase tracking-wide text-tn-black focus:outline-none disabled:opacity-40"
+                    >
+                      <option value="">Tous modèles</option>
+                      {availableModels.map((model) => (
+                        <option key={model} value={model}>
+                          {model}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="vehicle-year" className="sr-only">
+                      Année
+                    </label>
+                    <select
+                      id="vehicle-year"
+                      value={vehicleYear ?? ""}
+                      onChange={(e) => handleVehicleYearChange(e.target.value)}
+                      disabled={!vehicleMake || availableYears.length === 0}
+                      className="w-full rounded-lg border-2 border-tn-black bg-tn-white px-3 py-2.5 text-xs font-black uppercase tracking-wide text-tn-black focus:outline-none disabled:opacity-40"
+                    >
+                      <option value="">Toutes années</option>
+                      {availableYears.map((year) => (
+                        <option key={year} value={year}>
+                          {year}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="flex flex-wrap items-center justify-between gap-4">
               <h2 className="text-xs font-black uppercase tracking-widest text-tn-black-soft/60">
                 Filtrer par catégorie
               </h2>
 
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
+                {availableBrands.length > 0 && (
+                  <>
+                    <label
+                      htmlFor="brand"
+                      className="text-xs font-black uppercase tracking-widest text-tn-black-soft/60"
+                    >
+                      Marque
+                    </label>
+                    <select
+                      id="brand"
+                      value={activeBrand}
+                      onChange={(e) => handleBrandChange(e.target.value)}
+                      className="rounded-lg border-2 border-tn-black bg-tn-white px-3 py-2 text-xs font-black uppercase tracking-wide text-tn-black shadow-[2px_2px_0_0_var(--tn-black)] transition-all duration-200 ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:-translate-y-0.5 focus:-translate-y-0.5 focus:shadow-[4px_4px_0_0_var(--tn-red)] focus:outline-none"
+                    >
+                      <option value={ALL_BRANDS}>Toutes les marques</option>
+                      {availableBrands.map((brand) => (
+                        <option key={brand} value={brand}>
+                          {brand}
+                        </option>
+                      ))}
+                    </select>
+                  </>
+                )}
                 <label
                   htmlFor="sort"
                   className="text-xs font-black uppercase tracking-widest text-tn-black-soft/60"
@@ -339,6 +530,23 @@ function CatalogueContent() {
                 <>
                   {" "}
                   en <span className="text-tn-red">{activeCategoryLabel}</span>
+                </>
+              )}
+              {activeBrand !== ALL_BRANDS && (
+                <>
+                  {" "}
+                  · marque <span className="text-tn-red">{activeBrand}</span>
+                </>
+              )}
+              {vehicleMake && (
+                <>
+                  {" "}
+                  · véhicule{" "}
+                  <span className="text-tn-red">
+                    {vehicleMake}
+                    {vehicleModel ? ` ${vehicleModel}` : ""}
+                    {vehicleYear ? ` (${vehicleYear})` : ""}
+                  </span>
                 </>
               )}
               {activeDepartment && (

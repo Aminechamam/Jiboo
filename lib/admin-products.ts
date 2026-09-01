@@ -50,6 +50,10 @@ export type ProductPatch = Partial<{
   supplier_id: string | null;
   /** Voir le commentaire sur `Product.cardSubtitle` dans lib/supabase.ts. */
   card_subtitle: string | null;
+  /** Marque du fabricant (ex. "Ferodo", "Harden") — indépendant de category_id
+   *  (type de pièce) et de supplier_id (grossiste qui a livré). Alimente le
+   *  filtre par marque du catalogue. Null si inconnue. */
+  brand: string | null;
 }>;
 
 export async function updateProduct(
@@ -83,6 +87,7 @@ export type ProductInput = {
   photo_url: string | null;
   supplier_id: string | null;
   card_subtitle: string | null;
+  brand: string | null;
 };
 
 /** Raw columns PostgREST hands back for a POST with
@@ -102,6 +107,7 @@ export type CreatedProductRow = {
   low_stock_threshold: number;
   supplier_id: string | null;
   card_subtitle: string | null;
+  brand: string | null;
 };
 
 export async function createProduct(
@@ -134,6 +140,7 @@ export async function createProduct(
     low_stock_threshold: number;
     supplier_id: string | null;
     card_subtitle: string | null;
+    brand: string | null;
   }[];
   const row = rows[0];
   if (!row) throw new Error("Réponse invalide du serveur lors de la création du produit.");
@@ -149,6 +156,7 @@ export async function createProduct(
     low_stock_threshold: row.low_stock_threshold,
     supplier_id: row.supplier_id,
     card_subtitle: row.card_subtitle,
+    brand: row.brand,
   };
 }
 
@@ -376,6 +384,9 @@ export type CsvImportRow = {
   /** Voir le commentaire sur `Product.cardSubtitle` dans lib/supabase.ts.
    *  Colonne optionnelle : null si absente de l'en-tête ou vide sur la ligne. */
   cardSubtitle: string | null;
+  /** Voir le commentaire sur `ProductPatch.brand` plus haut. Colonne
+   *  optionnelle : null si absente de l'en-tête ou vide sur la ligne. */
+  brand: string | null;
 };
 
 export type RowIssue = {
@@ -393,7 +404,7 @@ const REQUIRED_HEADERS = ["reference", "name", "price", "stock", "category"] as 
 
 /** Expected header row, shown in the admin UI hint block. */
 export const CSV_EXPECTED_HEADER =
-  "reference,name,description,card_subtitle,price,stock,category,photo_url,supplier";
+  "reference,name,description,card_subtitle,brand,price,stock,category,photo_url,supplier";
 
 export function parseProductsCsv(text: string): ParseCsvResult {
   const table = parseCsvTable(text);
@@ -423,6 +434,7 @@ export function parseProductsCsv(text: string): ParseCsvResult {
     name: colIndex("name"),
     description: colIndex("description"),
     cardSubtitle: colIndex("card_subtitle"),
+    brand: colIndex("brand"),
     price: colIndex("price"),
     stock: colIndex("stock"),
     category: colIndex("category"),
@@ -443,6 +455,7 @@ export function parseProductsCsv(text: string): ParseCsvResult {
     const description = idx.description >= 0 ? (raw[idx.description] ?? "").trim() : "";
     const cardSubtitle =
       idx.cardSubtitle >= 0 ? (raw[idx.cardSubtitle] ?? "").trim() || null : null;
+    const brand = idx.brand >= 0 ? (raw[idx.brand] ?? "").trim() || null : null;
     const priceRaw = (raw[idx.price] ?? "").trim();
     const stockRaw = (raw[idx.stock] ?? "").trim();
     const categoryName = (raw[idx.category] ?? "").trim();
@@ -472,6 +485,7 @@ export function parseProductsCsv(text: string): ParseCsvResult {
       name,
       description,
       cardSubtitle,
+      brand,
       price,
       stock,
       categoryName,
@@ -590,6 +604,7 @@ export async function bulkImportProducts(
         name: row.name,
         description: row.description,
         card_subtitle: row.cardSubtitle,
+        brand: row.brand,
         price: row.price,
         stock: row.stock,
         category_id: categoryId,

@@ -85,6 +85,10 @@ export type Product = {
    *  emplacement. Distinct de `description`, qui reste le texte complet
    *  affiché sur la fiche produit. Null tant que l'admin ne l'a pas rempli. */
   cardSubtitle: string | null;
+  /** Marque du fabricant (ex. "Ferodo", "Harden") — sert au filtre par
+   *  marque du catalogue. Indépendant de `category` (type de pièce) et de
+   *  `supplierId` (grossiste). Null si inconnue. */
+  brand: string | null;
 };
 
 type RawProduct = {
@@ -100,6 +104,7 @@ type RawProduct = {
   supplier_id: string | null;
   product_compatibility: ProductCompatibility[] | null;
   card_subtitle: string | null;
+  brand: string | null;
 };
 
 type RawDeliveryZone = {
@@ -141,12 +146,13 @@ function mapProduct(row: RawProduct): Product {
     compatibility: isPiecesAuto ? buildCompatibility(row.product_compatibility) : "",
     compatibilityList: row.product_compatibility ?? [],
     cardSubtitle: row.card_subtitle,
+    brand: row.brand,
   };
 }
 
 export async function fetchProducts(): Promise<Product[]> {
   const url =
-    `${SUPABASE_URL}/rest/v1/products?select=id,reference,name,description,price,stock,photo_url,low_stock_threshold,supplier_id,card_subtitle,` +
+    `${SUPABASE_URL}/rest/v1/products?select=id,reference,name,description,price,stock,photo_url,low_stock_threshold,supplier_id,card_subtitle,brand,` +
     `categories(id,name,departments(id,name,slug)),product_compatibility(make,model,year_from,year_to,engine)&order=created_at.asc`;
 
   const res = await fetch(url, { headers });
@@ -159,7 +165,7 @@ export async function fetchProducts(): Promise<Product[]> {
 
 export async function fetchProductById(id: string): Promise<Product | null> {
   const url =
-    `${SUPABASE_URL}/rest/v1/products?id=eq.${id}&select=id,reference,name,description,price,stock,photo_url,low_stock_threshold,supplier_id,card_subtitle,` +
+    `${SUPABASE_URL}/rest/v1/products?id=eq.${id}&select=id,reference,name,description,price,stock,photo_url,low_stock_threshold,supplier_id,card_subtitle,brand,` +
     `categories(id,name,departments(id,name,slug)),product_compatibility(make,model,year_from,year_to,engine)`;
 
   const res = await fetch(url, { headers });

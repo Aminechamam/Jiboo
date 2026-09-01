@@ -34,6 +34,8 @@ type Draft = {
   description: string;
   /** Voir le commentaire sur `Product.cardSubtitle` dans lib/supabase.ts. */
   cardSubtitle: string;
+  /** Voir le commentaire sur `Product.brand` dans lib/supabase.ts. */
+  brand: string;
   price: string;
   stock: string;
   categoryId: string;
@@ -47,6 +49,7 @@ function productToDraft(product: Product): Draft {
     name: product.name,
     description: product.description,
     cardSubtitle: product.cardSubtitle ?? "",
+    brand: product.brand ?? "",
     price: String(product.price),
     stock: String(product.stock),
     categoryId: product.category?.id ?? "",
@@ -60,6 +63,7 @@ const EMPTY_NEW_PRODUCT: Draft = {
   name: "",
   description: "",
   cardSubtitle: "",
+  brand: "",
   price: "",
   stock: "",
   categoryId: "",
@@ -281,6 +285,7 @@ export default function AdminProduitsPage() {
               name: draft.name.trim(),
               description: draft.description.trim(),
               cardSubtitle: draft.cardSubtitle.trim() || null,
+              brand: draft.brand.trim() || null,
               price: nextPrice,
               stock: nextStock,
               category: nextCategory,
@@ -297,6 +302,7 @@ export default function AdminProduitsPage() {
         name: draft.name.trim(),
         description: draft.description.trim(),
         card_subtitle: draft.cardSubtitle.trim() || null,
+        brand: draft.brand.trim() || null,
         price: nextPrice,
         stock: nextStock,
         category_id: draft.categoryId || null,
@@ -383,6 +389,7 @@ export default function AdminProduitsPage() {
         name: newProduct.name.trim(),
         description: newProduct.description.trim(),
         card_subtitle: newProduct.cardSubtitle.trim() || null,
+        brand: newProduct.brand.trim() || null,
         price: Number(newProduct.price),
         stock: Number(newProduct.stock),
         category_id: newProduct.categoryId || null,
@@ -398,6 +405,7 @@ export default function AdminProduitsPage() {
         name: created.name,
         description: created.description,
         cardSubtitle: created.card_subtitle,
+        brand: created.brand,
         price: created.price,
         stock: created.stock,
         photoUrl: created.photo_url,
@@ -547,6 +555,15 @@ export default function AdminProduitsPage() {
             </select>
           </label>
           <label className={labelClass}>
+            Marque (fabricant, ex. Ferodo, Harden)
+            <input
+              value={newProduct.brand}
+              onChange={(e) => setNewProduct((p) => ({ ...p, brand: e.target.value }))}
+              placeholder="Ex. : Ferodo"
+              className={inputClass}
+            />
+          </label>
+          <label className={labelClass}>
             Prix (DT)
             <input
               required
@@ -631,7 +648,9 @@ export default function AdminProduitsPage() {
           <code className="font-bold">supplier</code> sont créés automatiquement s&apos;ils
           n&apos;existent pas encore. <code className="font-bold">photo_url</code> est optionnelle.{" "}
           <code className="font-bold">card_subtitle</code> est optionnelle : c&apos;est le texte
-          affiché sur la carte produit (catalogue/accueil) à la place de la référence.
+          affiché sur la carte produit (catalogue/accueil) à la place de la référence.{" "}
+          <code className="font-bold">brand</code> est optionnelle : c&apos;est la marque du
+          fabricant (ex. Ferodo, Harden), utilisée par le filtre par marque du catalogue.
           Les lignes sont importées une par une&nbsp;: une ligne en erreur (prix invalide,
           stock invalide…) n&apos;empêche pas les autres d&apos;être importées. Une{" "}
           <code className="font-bold">reference</code> déjà présente dans le catalogue n&apos;est
@@ -871,6 +890,15 @@ export default function AdminProduitsPage() {
                           <option value="">Aucun</option>
                           <SupplierOptions suppliers={suppliers} />
                         </select>
+                      </label>
+                      <label className={labelClass}>
+                        Marque (fabricant, ex. Ferodo, Harden)
+                        <input
+                          value={draft.brand}
+                          onChange={(e) => setDraft((d) => (d ? { ...d, brand: e.target.value } : d))}
+                          placeholder="Ex. : Ferodo"
+                          className={inputClass}
+                        />
                       </label>
                       <label className={labelClass}>
                         Prix (DT)
