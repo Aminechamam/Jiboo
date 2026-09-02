@@ -170,15 +170,21 @@ function CatalogueContent() {
   ];
 
   const filteredProducts = useMemo(() => {
+    const query = normalizeText(searchTerm.trim());
+
+    // Une recherche par référence (ou nom) doit retrouver le produit même
+    // s'il n'appartient pas à la catégorie actuellement sélectionnée : on
+    // ignore donc le filtre catégorie dès qu'une recherche est en cours (le
+    // filtre rayon, lui, reste appliqué — voir le commentaire plus haut sur
+    // la séparation entre rayons).
     const byCategory =
-      activeCategory === ALL_CATEGORIES
+      query || activeCategory === ALL_CATEGORIES
         ? departmentProducts
         : departmentProducts.filter((p) => p.category?.id && activeCategoryIds.includes(p.category.id));
 
     const byBrand =
       activeBrand === ALL_BRANDS ? byCategory : byCategory.filter((p) => p.brand === activeBrand);
 
-    const query = normalizeText(searchTerm.trim());
     const base = query
       ? byBrand.filter((p) =>
           [p.name, p.reference, p.compatibility, p.description]
@@ -387,7 +393,7 @@ function CatalogueContent() {
             </span>
             <span className="text-sm font-bold uppercase tracking-wide text-tn-black-soft/70">
               {filteredProducts.length > 1 ? "produits trouvés" : "produit trouvé"}
-              {activeCategoryLabel && (
+              {activeCategoryLabel && !searchTerm.trim() && (
                 <>
                   {" "}
                   en <span className="text-tn-red">{activeCategoryLabel}</span>
