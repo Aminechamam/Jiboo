@@ -36,8 +36,8 @@ export function Footer() {
             Contact
           </h4>
           <ul className="mt-4 space-y-2 text-sm text-tn-white/70">
-            <li>Ariana, Tunis, Tunisie</li>
-            <li>+216 55 123 456</li>
+            <li>40 rue Hedi Chaker, Tunis, Tunisie</li>
+            <li>+216 57 099 154</li>
             <li>contact@jiboo.tn</li>
           </ul>
         </div>
