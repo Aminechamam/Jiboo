@@ -89,6 +89,11 @@ export type Product = {
    *  marque du catalogue. Indépendant de `category` (type de pièce) et de
    *  `supplierId` (grossiste). Null si inconnue. */
   brand: string | null;
+  /** Référence pièce d'origine (OEM) constructeur — ex. "T153401310BB".
+   *  Distincte de `reference` (référence catalogue/pièce adaptable).
+   *  Optionnelle, pertinente uniquement pour le rayon Pièces Auto ; null si
+   *  non renseignée. Affichée au client sur la fiche produit quand présente. */
+  oemReference: string | null;
 };
 
 type RawProduct = {
@@ -105,6 +110,7 @@ type RawProduct = {
   product_compatibility: ProductCompatibility[] | null;
   card_subtitle: string | null;
   brand: string | null;
+  oem_reference: string | null;
 };
 
 type RawDeliveryZone = {
@@ -147,12 +153,13 @@ function mapProduct(row: RawProduct): Product {
     compatibilityList: row.product_compatibility ?? [],
     cardSubtitle: row.card_subtitle,
     brand: row.brand,
+    oemReference: row.oem_reference,
   };
 }
 
 export async function fetchProducts(): Promise<Product[]> {
   const url =
-    `${SUPABASE_URL}/rest/v1/products?select=id,reference,name,description,price,stock,photo_url,low_stock_threshold,supplier_id,card_subtitle,brand,` +
+    `${SUPABASE_URL}/rest/v1/products?select=id,reference,name,description,price,stock,photo_url,low_stock_threshold,supplier_id,card_subtitle,brand,oem_reference,` +
     `categories(id,name,departments(id,name,slug)),product_compatibility(make,model,year_from,year_to,engine)&order=created_at.asc`;
 
   const res = await fetch(url, { headers });
@@ -165,7 +172,7 @@ export async function fetchProducts(): Promise<Product[]> {
 
 export async function fetchProductById(id: string): Promise<Product | null> {
   const url =
-    `${SUPABASE_URL}/rest/v1/products?id=eq.${id}&select=id,reference,name,description,price,stock,photo_url,low_stock_threshold,supplier_id,card_subtitle,brand,` +
+    `${SUPABASE_URL}/rest/v1/products?id=eq.${id}&select=id,reference,name,description,price,stock,photo_url,low_stock_threshold,supplier_id,card_subtitle,brand,oem_reference,` +
     `categories(id,name,departments(id,name,slug)),product_compatibility(make,model,year_from,year_to,engine)`;
 
   const res = await fetch(url, { headers });

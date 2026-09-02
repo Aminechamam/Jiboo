@@ -192,6 +192,11 @@ export default function ProductDetailClient() {
                 <p className="text-xs font-bold uppercase tracking-wide text-tn-black-soft/50">
                   Réf. {product.reference}
                 </p>
+                {product.oemReference && (
+                  <p className="text-xs font-bold uppercase tracking-wide text-tn-black-soft/50">
+                    Réf. origine (OEM) : {product.oemReference}
+                  </p>
+                )}
                 <div className="flex items-center gap-3">
                   {outOfStock ? (
                     <span className="rounded-full bg-tn-black-soft/10 px-3 py-1 text-xs font-black uppercase tracking-wide text-tn-black-soft/50">

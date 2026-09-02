@@ -36,6 +36,8 @@ type Draft = {
   cardSubtitle: string;
   /** Voir le commentaire sur `Product.brand` dans lib/supabase.ts. */
   brand: string;
+  /** Voir le commentaire sur `Product.oemReference` dans lib/supabase.ts. */
+  oemReference: string;
   price: string;
   stock: string;
   categoryId: string;
@@ -50,6 +52,7 @@ function productToDraft(product: Product): Draft {
     description: product.description,
     cardSubtitle: product.cardSubtitle ?? "",
     brand: product.brand ?? "",
+    oemReference: product.oemReference ?? "",
     price: String(product.price),
     stock: String(product.stock),
     categoryId: product.category?.id ?? "",
@@ -64,6 +67,7 @@ const EMPTY_NEW_PRODUCT: Draft = {
   description: "",
   cardSubtitle: "",
   brand: "",
+  oemReference: "",
   price: "",
   stock: "",
   categoryId: "",
@@ -286,6 +290,7 @@ export default function AdminProduitsPage() {
               description: draft.description.trim(),
               cardSubtitle: draft.cardSubtitle.trim() || null,
               brand: draft.brand.trim() || null,
+              oemReference: draft.oemReference.trim() || null,
               price: nextPrice,
               stock: nextStock,
               category: nextCategory,
@@ -303,6 +308,7 @@ export default function AdminProduitsPage() {
         description: draft.description.trim(),
         card_subtitle: draft.cardSubtitle.trim() || null,
         brand: draft.brand.trim() || null,
+        oem_reference: draft.oemReference.trim() || null,
         price: nextPrice,
         stock: nextStock,
         category_id: draft.categoryId || null,
@@ -390,6 +396,7 @@ export default function AdminProduitsPage() {
         description: newProduct.description.trim(),
         card_subtitle: newProduct.cardSubtitle.trim() || null,
         brand: newProduct.brand.trim() || null,
+        oem_reference: newProduct.oemReference.trim() || null,
         price: Number(newProduct.price),
         stock: Number(newProduct.stock),
         category_id: newProduct.categoryId || null,
@@ -406,6 +413,7 @@ export default function AdminProduitsPage() {
         description: created.description,
         cardSubtitle: created.card_subtitle,
         brand: created.brand,
+        oemReference: created.oem_reference,
         price: created.price,
         stock: created.stock,
         photoUrl: created.photo_url,
@@ -564,6 +572,15 @@ export default function AdminProduitsPage() {
             />
           </label>
           <label className={labelClass}>
+            Référence origine (OEM) — pièces auto, optionnel
+            <input
+              value={newProduct.oemReference}
+              onChange={(e) => setNewProduct((p) => ({ ...p, oemReference: e.target.value }))}
+              placeholder="Ex. : T153401310BB"
+              className={inputClass}
+            />
+          </label>
+          <label className={labelClass}>
             Prix (DT)
             <input
               required
@@ -650,8 +667,10 @@ export default function AdminProduitsPage() {
           <code className="font-bold">card_subtitle</code> est optionnelle : c&apos;est le texte
           affiché sur la carte produit (catalogue/accueil) à la place de la référence.{" "}
           <code className="font-bold">brand</code> est optionnelle : c&apos;est la marque du
-          fabricant (ex. Ferodo, Harden), utilisée par le filtre par marque du catalogue.
-          Les lignes sont importées une par une&nbsp;: une ligne en erreur (prix invalide,
+          fabricant (ex. Ferodo, Harden), utilisée par le filtre par marque du catalogue.{" "}
+          <code className="font-bold">oem_reference</code> est optionnelle : c&apos;est la
+          référence pièce d&apos;origine (OEM) constructeur, pertinente pour les pièces auto
+          uniquement. Les lignes sont importées une par une&nbsp;: une ligne en erreur (prix invalide,
           stock invalide…) n&apos;empêche pas les autres d&apos;être importées. Une{" "}
           <code className="font-bold">reference</code> déjà présente dans le catalogue n&apos;est
           plus un échec&nbsp;: le produit existant est mis à jour avec les valeurs de la ligne
@@ -897,6 +916,17 @@ export default function AdminProduitsPage() {
                           value={draft.brand}
                           onChange={(e) => setDraft((d) => (d ? { ...d, brand: e.target.value } : d))}
                           placeholder="Ex. : Ferodo"
+                          className={inputClass}
+                        />
+                      </label>
+                      <label className={labelClass}>
+                        Référence origine (OEM) — pièces auto, optionnel
+                        <input
+                          value={draft.oemReference}
+                          onChange={(e) =>
+                            setDraft((d) => (d ? { ...d, oemReference: e.target.value } : d))
+                          }
+                          placeholder="Ex. : T153401310BB"
                           className={inputClass}
                         />
                       </label>
