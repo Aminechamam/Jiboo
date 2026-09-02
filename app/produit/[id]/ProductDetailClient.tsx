@@ -102,6 +102,18 @@ export default function ProductDetailClient() {
     };
   }, [id]);
 
+  // Photo principale + secondaires, dédoublonnée — l'utilisateur peut cliquer
+  // une vignette pour changer la grande photo. `activePhotoUrl` peut survivre
+  // au changement de produit (pas d'effet de reset dédié, pour éviter un
+  // setState-in-effect de plus) : le filtre `gallery.includes(...)` ci-dessous
+  // ignore silencieusement une valeur qui ne fait plus partie de la galerie
+  // courante et retombe sur la première photo.
+  const [activePhotoUrl, setActivePhotoUrl] = useState<string | null>(null);
+  const gallery = product
+    ? Array.from(new Set([product.photoUrl, ...product.photoUrls].filter((u): u is string => Boolean(u))))
+    : [];
+  const displayedPhoto = activePhotoUrl && gallery.includes(activePhotoUrl) ? activePhotoUrl : gallery[0] ?? null;
+
   const outOfStock = product ? product.stock <= 0 : false;
   const lowStock = product ? !outOfStock && product.stock <= product.lowStockThreshold : false;
 
@@ -175,10 +187,31 @@ export default function ProductDetailClient() {
                 <div className="rounded-2xl border-2 border-tn-black bg-tn-white p-4 shadow-[6px_6px_0_0_var(--tn-black)]">
                   <PartPlaceholder
                     categoryName={product.category?.name}
-                    photoUrl={product.photoUrl}
+                    photoUrl={displayedPhoto}
                     alt={product.name}
                   />
                 </div>
+                {gallery.length > 1 && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {gallery.map((url, i) => (
+                      <button
+                        key={url + i}
+                        type="button"
+                        onClick={() => setActivePhotoUrl(url)}
+                        aria-label={`Photo ${i + 1}`}
+                        aria-pressed={url === displayedPhoto}
+                        className={`h-16 w-16 flex-none overflow-hidden rounded-lg border-2 transition-all duration-200 ${
+                          url === displayedPhoto
+                            ? "border-tn-red"
+                            : "border-tn-black/20 hover:border-tn-black"
+                        }`}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={url} alt="" className="h-full w-full object-cover" />
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* DETAILS */}

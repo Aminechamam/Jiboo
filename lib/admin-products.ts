@@ -167,6 +167,58 @@ export async function createProduct(
 }
 
 // ---------------------------------------------------------------------------
+// Secondary photos (product_photos table) — photoUrl / photo_url on the
+// product row itself stays the single "main" photo used on the catalogue
+// card; this is the admin-managed gallery of extra photos shown on the
+// product detail page, in display order.
+//
+// Simplest correct approach given the small expected counts (a handful of
+// photos per product, edited rarely): replace the whole set on every save
+// rather than diffing individual rows. Delete-then-insert, not wrapped in a
+// transaction (PostgREST has none available here) — if the insert fails
+// after the delete succeeded the product is left with no secondary photos,
+// which the admin UI surfaces as an error so it can be retried, rather than
+// silently losing photos.
+// ---------------------------------------------------------------------------
+
+export async function replaceProductPhotos(
+  accessToken: string,
+  productId: string,
+  urls: string[]
+): Promise<void> {
+  const deleteRes = await fetch(
+    `${SUPABASE_URL}/rest/v1/product_photos?product_id=eq.${productId}`,
+    {
+      method: "DELETE",
+      headers: { ...authedHeaders(accessToken), Prefer: "return=minimal" },
+    }
+  );
+  if (!deleteRes.ok) {
+    if (deleteRes.status === 401) throw new SessionExpiredError();
+    throw new Error(await parseErrorMessage(deleteRes, "Impossible de mettre à jour les photos."));
+  }
+
+  const cleaned = urls.map((u) => u.trim()).filter(Boolean);
+  if (cleaned.length === 0) return;
+
+  const insertRes = await fetch(`${SUPABASE_URL}/rest/v1/product_photos`, {
+    method: "POST",
+    headers: {
+      ...authedHeaders(accessToken),
+      "Content-Type": "application/json",
+      Prefer: "return=minimal",
+    },
+    body: JSON.stringify(
+      cleaned.map((url, position) => ({ product_id: productId, url, position }))
+    ),
+  });
+  if (!insertRes.ok) {
+    if (insertRes.status === 401) throw new SessionExpiredError();
+    throw new Error(await parseErrorMessage(insertRes, "Impossible d'enregistrer les photos."));
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Lookup by reference — used by the CSV bulk import's upsert path (see
 // bulkImportProducts below) to find the existing row to PATCH when a create
 // hits a duplicate `reference`.

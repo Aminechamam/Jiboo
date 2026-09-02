@@ -94,6 +94,10 @@ export type Product = {
    *  Optionnelle, pertinente uniquement pour le rayon Pièces Auto ; null si
    *  non renseignée. Affichée au client sur la fiche produit quand présente. */
   oemReference: string | null;
+  /** Photos secondaires (galerie fiche produit), dans l'ordre choisi par
+   *  l'admin — distinctes de `photoUrl`, qui reste la photo principale
+   *  affichée sur la carte catalogue/accueil. Tableau vide si aucune. */
+  photoUrls: string[];
 };
 
 type RawProduct = {
@@ -111,6 +115,9 @@ type RawProduct = {
   card_subtitle: string | null;
   brand: string | null;
   oem_reference: string | null;
+  /** Photos secondaires jointes — triées par `position` via le paramètre
+   *  `product_photos.order` sur les requêtes PostgREST ci-dessous. */
+  product_photos: { url: string; position: number }[] | null;
 };
 
 type RawDeliveryZone = {
@@ -130,6 +137,14 @@ function buildCompatibility(rows: ProductCompatibility[] | null | undefined): st
 /** Format a TND price the way the rest of the site does: "24,500 DT". */
 export function formatPrice(price: number): string {
   return `${price.toFixed(3).replace(".", ",")} DT`;
+}
+
+function buildPhotoUrls(rows: { url: string; position: number }[] | null | undefined): string[] {
+  if (!rows || rows.length === 0) return [];
+  return [...rows]
+    .sort((a, b) => a.position - b.position)
+    .map((r) => r.url)
+    .filter(Boolean);
 }
 
 function mapProduct(row: RawProduct): Product {
@@ -154,13 +169,20 @@ function mapProduct(row: RawProduct): Product {
     cardSubtitle: row.card_subtitle,
     brand: row.brand,
     oemReference: row.oem_reference,
+    photoUrls: buildPhotoUrls(row.product_photos),
   };
 }
+
+// `product_photos.order=position.asc` trie la ressource jointe elle-même
+// (syntaxe PostgREST pour l'ordre d'un embed) — distinct du `order=` de tête
+// qui trie la liste de produits.
+const PRODUCT_PHOTOS_EMBED = "product_photos(url,position)";
 
 export async function fetchProducts(): Promise<Product[]> {
   const url =
     `${SUPABASE_URL}/rest/v1/products?select=id,reference,name,description,price,stock,photo_url,low_stock_threshold,supplier_id,card_subtitle,brand,oem_reference,` +
-    `categories(id,name,departments(id,name,slug)),product_compatibility(make,model,year_from,year_to,engine)&order=created_at.asc`;
+    `categories(id,name,departments(id,name,slug)),product_compatibility(make,model,year_from,year_to,engine),${PRODUCT_PHOTOS_EMBED}` +
+    `&product_photos.order=position.asc&order=created_at.asc`;
 
   const res = await fetch(url, { headers });
   if (!res.ok) {
@@ -173,7 +195,8 @@ export async function fetchProducts(): Promise<Product[]> {
 export async function fetchProductById(id: string): Promise<Product | null> {
   const url =
     `${SUPABASE_URL}/rest/v1/products?id=eq.${id}&select=id,reference,name,description,price,stock,photo_url,low_stock_threshold,supplier_id,card_subtitle,brand,oem_reference,` +
-    `categories(id,name,departments(id,name,slug)),product_compatibility(make,model,year_from,year_to,engine)`;
+    `categories(id,name,departments(id,name,slug)),product_compatibility(make,model,year_from,year_to,engine),${PRODUCT_PHOTOS_EMBED}` +
+    `&product_photos.order=position.asc`;
 
   const res = await fetch(url, { headers });
   if (!res.ok) {

@@ -21,6 +21,7 @@ import {
   createProduct,
   deleteProduct,
   parseProductsCsv,
+  replaceProductPhotos,
   updateProduct,
   CSV_EXPECTED_HEADER,
   type ImportSummary,
@@ -42,6 +43,10 @@ type Draft = {
   stock: string;
   categoryId: string;
   photoUrl: string;
+  /** Photos secondaires (galerie fiche produit) — voir le commentaire sur
+   *  `Product.photoUrls` dans lib/supabase.ts. Chaque entrée est une URL en
+   *  cours de saisie ; les entrées vides sont filtrées avant l'enregistrement. */
+  photoUrls: string[];
   supplierId: string;
 };
 
@@ -57,6 +62,7 @@ function productToDraft(product: Product): Draft {
     stock: String(product.stock),
     categoryId: product.category?.id ?? "",
     photoUrl: product.photoUrl ?? "",
+    photoUrls: product.photoUrls.length > 0 ? product.photoUrls : [],
     supplierId: product.supplierId ?? "",
   };
 }
@@ -72,6 +78,7 @@ const EMPTY_NEW_PRODUCT: Draft = {
   stock: "",
   categoryId: "",
   photoUrl: "",
+  photoUrls: [],
   supplierId: "",
 };
 
@@ -133,6 +140,51 @@ function SupplierOptions({ suppliers }: { suppliers: Supplier[] }) {
         </option>
       ))}
     </>
+  );
+}
+
+/** Liste éditable d'URLs de photos secondaires — une ligne par photo, avec
+ *  bouton de suppression et bouton d'ajout. Les champs vides ne sont filtrés
+ *  qu'au moment de l'enregistrement (voir replaceProductPhotos), pas ici, pour
+ *  ne pas gêner la saisie pendant qu'un champ est en cours de frappe. */
+function PhotoUrlsField({
+  value,
+  onChange,
+}: {
+  value: string[];
+  onChange: (next: string[]) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      {value.map((url, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <input
+            value={url}
+            onChange={(e) => {
+              const next = [...value];
+              next[i] = e.target.value;
+              onChange(next);
+            }}
+            placeholder="https://..."
+            className={`${inputClass} flex-1`}
+          />
+          <button
+            type="button"
+            onClick={() => onChange(value.filter((_, j) => j !== i))}
+            className="flex-none rounded-lg border-2 border-tn-black bg-tn-white px-2.5 py-2 text-[11px] font-black uppercase tracking-wide text-tn-black-soft/60 transition-colors duration-200 hover:border-tn-red hover:text-tn-red"
+          >
+            Retirer
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={() => onChange([...value, ""])}
+        className="w-fit rounded-lg border-2 border-dashed border-tn-black-soft/40 px-3 py-1.5 text-[11px] font-black uppercase tracking-wide text-tn-black-soft/60 transition-colors duration-200 hover:border-tn-red hover:text-tn-red"
+      >
+        + Ajouter une photo
+      </button>
+    </div>
   );
 }
 
@@ -279,6 +331,8 @@ export default function AdminProduitsPage() {
     const nextCategory = categories.find((c) => c.id === draft.categoryId) ?? null;
     const previous = product;
 
+    const cleanedPhotoUrls = draft.photoUrls.map((u) => u.trim()).filter(Boolean);
+
     // Optimistic update — rolled back below if the PATCH fails.
     setProducts((prev) =>
       prev.map((p) =>
@@ -295,6 +349,7 @@ export default function AdminProduitsPage() {
               stock: nextStock,
               category: nextCategory,
               photoUrl: draft.photoUrl.trim() || null,
+              photoUrls: cleanedPhotoUrls,
               supplierId: draft.supplierId || null,
             }
           : p
@@ -315,8 +370,6 @@ export default function AdminProduitsPage() {
         photo_url: draft.photoUrl.trim() || null,
         supplier_id: draft.supplierId || null,
       });
-      setExpandedId(null);
-      setDraft(null);
     } catch (err) {
       setProducts((prev) => prev.map((p) => (p.id === product.id ? previous : p)));
       if (err instanceof SessionExpiredError) {
@@ -324,6 +377,28 @@ export default function AdminProduitsPage() {
         return;
       }
       setRowError(err instanceof Error ? err.message : "Impossible de mettre à jour le produit.");
+      setSavingId(null);
+      return;
+    }
+
+    // Le produit principal est déjà enregistré à ce stade — une erreur ici ne
+    // le remet pas en cause, elle ne concerne que les photos secondaires ;
+    // on garde donc le panneau d'édition ouvert pour permettre de réessayer
+    // plutôt que de rollback tout le formulaire.
+    try {
+      await replaceProductPhotos(session.accessToken, product.id, cleanedPhotoUrls);
+      setExpandedId(null);
+      setDraft(null);
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        handleSessionExpired();
+        return;
+      }
+      setRowError(
+        err instanceof Error
+          ? `Produit enregistré, mais : ${err.message}`
+          : "Produit enregistré, mais impossible de mettre à jour les photos secondaires."
+      );
     } finally {
       setSavingId(null);
     }
@@ -406,6 +481,7 @@ export default function AdminProduitsPage() {
 
       const category = categories.find((c) => c.id === created.category_id) ?? null;
       const isPiecesAuto = category?.department?.slug === "pieces-auto";
+      const cleanedPhotoUrls = newProduct.photoUrls.map((u) => u.trim()).filter(Boolean);
       const product: Product = {
         id: created.id,
         reference: created.reference,
@@ -417,6 +493,7 @@ export default function AdminProduitsPage() {
         price: created.price,
         stock: created.stock,
         photoUrl: created.photo_url,
+        photoUrls: cleanedPhotoUrls,
         lowStockThreshold: created.low_stock_threshold,
         category,
         supplierId: created.supplier_id,
@@ -425,6 +502,24 @@ export default function AdminProduitsPage() {
       };
       setProducts((prev) => [product, ...prev]);
       setNewProduct({ ...EMPTY_NEW_PRODUCT, categoryId: newProduct.categoryId, supplierId: newProduct.supplierId });
+
+      // Le produit est déjà créé à ce stade — une erreur ici ne le remet pas
+      // en cause, elle ne concerne que les photos secondaires.
+      if (cleanedPhotoUrls.length > 0) {
+        try {
+          await replaceProductPhotos(session.accessToken, created.id, cleanedPhotoUrls);
+        } catch (photoErr) {
+          if (photoErr instanceof SessionExpiredError) {
+            handleSessionExpired();
+            return;
+          }
+          setCreateError(
+            photoErr instanceof Error
+              ? `Produit créé, mais : ${photoErr.message}`
+              : "Produit créé, mais impossible d'enregistrer les photos secondaires."
+          );
+        }
+      }
     } catch (err) {
       if (err instanceof SessionExpiredError) {
         handleSessionExpired();
@@ -605,13 +700,20 @@ export default function AdminProduitsPage() {
             />
           </label>
           <label className={labelClass}>
-            Photo (URL, optionnel)
+            Photo principale (URL, optionnel)
             <input
               value={newProduct.photoUrl}
               onChange={(e) => setNewProduct((p) => ({ ...p, photoUrl: e.target.value }))}
               className={inputClass}
             />
           </label>
+          <div className={`${labelClass} sm:col-span-2 lg:col-span-3`}>
+            Photos secondaires (galerie fiche produit, optionnel)
+            <PhotoUrlsField
+              value={newProduct.photoUrls}
+              onChange={(next) => setNewProduct((p) => ({ ...p, photoUrls: next }))}
+            />
+          </div>
           <label className={`${labelClass} sm:col-span-2 lg:col-span-3`}>
             Description
             <textarea
@@ -953,13 +1055,20 @@ export default function AdminProduitsPage() {
                         />
                       </label>
                       <label className={labelClass}>
-                        Photo (URL)
+                        Photo principale (URL)
                         <input
                           value={draft.photoUrl}
                           onChange={(e) => setDraft((d) => (d ? { ...d, photoUrl: e.target.value } : d))}
                           className={inputClass}
                         />
                       </label>
+                      <div className={`${labelClass} sm:col-span-2 lg:col-span-3`}>
+                        Photos secondaires (galerie fiche produit)
+                        <PhotoUrlsField
+                          value={draft.photoUrls}
+                          onChange={(next) => setDraft((d) => (d ? { ...d, photoUrls: next } : d))}
+                        />
+                      </div>
                       <label className={`${labelClass} sm:col-span-2 lg:col-span-3`}>
                         Description
                         <textarea
