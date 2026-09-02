@@ -173,14 +173,17 @@ function CatalogueContent() {
     const query = normalizeText(searchTerm.trim());
 
     // Une recherche par référence (ou nom) doit retrouver le produit même
-    // s'il n'appartient pas à la catégorie actuellement sélectionnée : on
-    // ignore donc le filtre catégorie dès qu'une recherche est en cours (le
-    // filtre rayon, lui, reste appliqué — voir le commentaire plus haut sur
-    // la séparation entre rayons).
+    // s'il n'appartient pas au rayon ou à la catégorie actuellement
+    // sélectionnés : on ignore donc les filtres rayon et catégorie dès
+    // qu'une recherche est en cours (ex. une référence quincaillerie doit
+    // remonter même si l'onglet actif est "Pièces auto"). Sans recherche,
+    // la séparation stricte entre rayons reste appliquée comme avant.
+    const searchScope = query ? products : departmentProducts;
+
     const byCategory =
       query || activeCategory === ALL_CATEGORIES
-        ? departmentProducts
-        : departmentProducts.filter((p) => p.category?.id && activeCategoryIds.includes(p.category.id));
+        ? searchScope
+        : searchScope.filter((p) => p.category?.id && activeCategoryIds.includes(p.category.id));
 
     const byBrand =
       activeBrand === ALL_BRANDS ? byCategory : byCategory.filter((p) => p.brand === activeBrand);
@@ -209,6 +212,7 @@ function CatalogueContent() {
     }
     return sorted;
   }, [
+    products,
     departmentProducts,
     activeCategory,
     activeCategoryIds,
@@ -405,7 +409,7 @@ function CatalogueContent() {
                   · marque <span className="text-tn-red">{activeBrand}</span>
                 </>
               )}
-              {activeDepartment && (
+              {activeDepartment && !searchTerm.trim() && (
                 <>
                   {" "}
                   · rayon <span className="text-tn-red">{activeDepartment.name}</span>
