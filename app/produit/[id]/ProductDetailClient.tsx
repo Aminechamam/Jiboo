@@ -13,6 +13,7 @@ import {
   type Product,
   type ProductCompatibility,
 } from "@/lib/supabase";
+import { getBrandDescription } from "@/lib/brands";
 
 function formatYearRange(yearFrom: number | null, yearTo: number | null): string | null {
   if (yearFrom && yearTo) return `${yearFrom}–${yearTo}`;
@@ -225,15 +226,25 @@ export default function ProductDetailClient() {
                 <p className="text-xs font-bold uppercase tracking-wide text-tn-black-soft/50">
                   Réf. {product.reference}
                 </p>
+                {product.description && (
+                  <p className="text-lg font-semibold leading-relaxed text-tn-black-soft sm:text-xl">
+                    {product.description}
+                  </p>
+                )}
                 {product.oemReference && (
                   <p className="text-xs font-bold uppercase tracking-wide text-tn-black-soft/50">
                     Réf. origine (OEM) : {product.oemReference}
                   </p>
                 )}
                 {product.brand && (
-                  <p className="text-xs font-bold uppercase tracking-wide text-tn-black-soft/50">
-                    Marque : {product.brand}
-                  </p>
+                  <div className="text-xs font-bold uppercase tracking-wide text-tn-black-soft/50">
+                    <p>Marque : {product.brand}</p>
+                    {getBrandDescription(product.brand) && (
+                      <p className="mt-1 normal-case font-medium tracking-normal text-tn-black-soft/70">
+                        {getBrandDescription(product.brand)}
+                      </p>
+                    )}
+                  </div>
                 )}
                 <div className="flex items-center gap-3">
                   {outOfStock ? (

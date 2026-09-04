@@ -143,6 +143,71 @@ function SupplierOptions({ suppliers }: { suppliers: Supplier[] }) {
   );
 }
 
+/** Case marque du formulaire produit — menu deroulant des marques deja
+ *  utilisees dans le catalogue (pour eviter les fautes de frappe qui
+ *  creeraient une marque en double, ex. "Ferodo" vs "ferodo "). Un choix
+ *  "+ Nouvelle marque" fait basculer sur un champ texte libre pour les cas
+ *  ou une marque encore jamais utilisee doit etre ajoutee. */
+function BrandField({
+  value,
+  onChange,
+  brands,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  brands: string[];
+}) {
+  const isKnownValue = value.trim() === "" || brands.includes(value);
+  const [customMode, setCustomMode] = useState(!isKnownValue);
+
+  if (customMode) {
+    return (
+      <div className="flex flex-col gap-1.5">
+        <input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="Ex. : Ferodo"
+          className={inputClass}
+          autoFocus
+        />
+        <button
+          type="button"
+          onClick={() => {
+            setCustomMode(false);
+            onChange("");
+          }}
+          className="w-fit text-[11px] font-bold uppercase tracking-wide text-tn-black-soft/50 underline decoration-dotted underline-offset-2 hover:text-tn-red"
+        >
+          Choisir dans la liste
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <select
+      value={value}
+      onChange={(e) => {
+        if (e.target.value === "__new__") {
+          setCustomMode(true);
+          onChange("");
+        } else {
+          onChange(e.target.value);
+        }
+      }}
+      className={inputClass}
+    >
+      <option value="">Aucune</option>
+      {brands.map((b) => (
+        <option key={b} value={b}>
+          {b}
+        </option>
+      ))}
+      <option value="__new__">+ Nouvelle marque...</option>
+    </select>
+  );
+}
+
 /** Liste éditable d'URLs de photos secondaires — une ligne par photo, avec
  *  bouton de suppression et bouton d'ajout. Les champs vides ne sont filtrés
  *  qu'au moment de l'enregistrement (voir replaceProductPhotos), pas ici, pour
@@ -232,6 +297,7 @@ export default function AdminProduitsPage() {
   // rattachement manuel des photos après un import CSV.
   const [supplierFilter, setSupplierFilter] = useState<string>("");
   const [onlyMissingPhoto, setOnlyMissingPhoto] = useState(false);
+  const [nameQuery, setNameQuery] = useState<string>("");
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -241,6 +307,8 @@ export default function AdminProduitsPage() {
   const [newProduct, setNewProduct] = useState<Draft>(EMPTY_NEW_PRODUCT);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [showCsvImport, setShowCsvImport] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [csvBusy, setCsvBusy] = useState(false);
@@ -588,27 +656,66 @@ export default function AdminProduitsPage() {
     }
   };
 
+  const existingBrands = Array.from(
+    new Set(
+      products
+        .map((p) => p.brand?.trim())
+        .filter((b): b is string => !!b)
+    )
+  ).sort((a, b) => a.localeCompare(b));
+
+  const trimmedNameQuery = nameQuery.trim().toLowerCase();
+
   const visibleProducts = products.filter((product) => {
     if (supplierFilter === "none" && product.supplierId) return false;
     if (supplierFilter && supplierFilter !== "none" && product.supplierId !== supplierFilter) {
       return false;
     }
     if (onlyMissingPhoto && product.photoUrl) return false;
+    if (
+      trimmedNameQuery &&
+      !product.reference.toLowerCase().includes(trimmedNameQuery) &&
+      !product.name.toLowerCase().includes(trimmedNameQuery) &&
+      !(product.brand ?? "").toLowerCase().includes(trimmedNameQuery)
+    ) {
+      return false;
+    }
     return true;
   });
 
   return (
     <div>
-      <div className="mb-6">
-        <span className="tn-ribbon inline-block bg-tn-red px-3 py-1 text-[11px] font-black uppercase tracking-widest text-tn-white">
-          Produits
-        </span>
-        <h1 className="mt-3 text-2xl font-black uppercase tracking-wide text-tn-black sm:text-3xl">
-          Gestion des produits
-        </h1>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <span className="tn-ribbon inline-block bg-tn-red px-3 py-1 text-[11px] font-black uppercase tracking-widest text-tn-white">
+            Produits
+          </span>
+          <h1 className="mt-3 text-2xl font-black uppercase tracking-wide text-tn-black sm:text-3xl">
+            Gestion des produits
+          </h1>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setShowCsvImport((v) => !v)}
+            aria-expanded={showCsvImport}
+            className="flex items-center gap-2 rounded-lg border-2 border-tn-black bg-tn-white px-5 py-2.5 text-xs font-black uppercase tracking-wide text-tn-black transition-all duration-200 hover:scale-105 hover:bg-tn-offwhite active:scale-95"
+          >
+            {showCsvImport ? "Fermer" : "Import CSV"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowAddForm((v) => !v)}
+            aria-expanded={showAddForm}
+            className="flex items-center gap-2 rounded-lg bg-tn-red px-5 py-2.5 text-xs font-black uppercase tracking-wide text-tn-white transition-all duration-200 hover:scale-105 hover:bg-tn-amber hover:text-tn-black active:scale-95"
+          >
+            {showAddForm ? "Fermer" : "+ Ajouter un produit"}
+          </button>
+        </div>
       </div>
 
       {/* ADD PRODUCT */}
+      {showAddForm && (
       <form
         onSubmit={handleCreate}
         className="mb-8 rounded-2xl border-2 border-tn-black bg-tn-white p-5 shadow-[4px_4px_0_0_var(--tn-black)] sm:p-6"
@@ -658,12 +765,11 @@ export default function AdminProduitsPage() {
             </select>
           </label>
           <label className={labelClass}>
-            Marque (fabricant, ex. Ferodo, Harden)
-            <input
+            Marque (fabricant)
+            <BrandField
               value={newProduct.brand}
-              onChange={(e) => setNewProduct((p) => ({ ...p, brand: e.target.value }))}
-              placeholder="Ex. : Ferodo"
-              className={inputClass}
+              onChange={(next) => setNewProduct((p) => ({ ...p, brand: next }))}
+              brands={existingBrands}
             />
           </label>
           <label className={labelClass}>
@@ -749,8 +855,10 @@ export default function AdminProduitsPage() {
           {creating ? "Création…" : "Ajouter le produit"}
         </button>
       </form>
+      )}
 
       {/* CSV IMPORT */}
+      {showCsvImport && (
       <div className="mb-8 rounded-2xl border-2 border-tn-black bg-tn-white p-5 shadow-[4px_4px_0_0_var(--tn-black)] sm:p-6">
         <h2 className="text-xs font-black uppercase tracking-widest text-tn-black-soft/60">
           Import CSV
@@ -858,10 +966,20 @@ export default function AdminProduitsPage() {
           </div>
         )}
       </div>
+      )}
 
       {/* FILTERS */}
       {!loading && !loadError && products.length > 0 && (
         <div className="mb-4 flex flex-wrap items-end gap-3 rounded-2xl border-2 border-tn-black bg-tn-white p-4 shadow-[3px_3px_0_0_var(--tn-black)]">
+          <label className={`${labelClass} min-w-[220px]`}>
+            Rechercher (référence, nom ou marque)
+            <input
+              value={nameQuery}
+              onChange={(e) => setNameQuery(e.target.value)}
+              placeholder="Ex. : FDB1001, plaquettes ou Textar"
+              className={inputClass}
+            />
+          </label>
           <label className={`${labelClass} min-w-[200px]`}>
             Filtrer par fournisseur
             <select
@@ -1013,12 +1131,11 @@ export default function AdminProduitsPage() {
                         </select>
                       </label>
                       <label className={labelClass}>
-                        Marque (fabricant, ex. Ferodo, Harden)
-                        <input
+                        Marque (fabricant)
+                        <BrandField
                           value={draft.brand}
-                          onChange={(e) => setDraft((d) => (d ? { ...d, brand: e.target.value } : d))}
-                          placeholder="Ex. : Ferodo"
-                          className={inputClass}
+                          onChange={(next) => setDraft((d) => (d ? { ...d, brand: next } : d))}
+                          brands={existingBrands}
                         />
                       </label>
                       <label className={labelClass}>

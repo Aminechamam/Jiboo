@@ -15,6 +15,13 @@ import {
   type Product,
 } from "@/lib/supabase";
 import { dedupeCategories, normalizeText } from "@/lib/categories";
+import {
+  productMatchesVehicle,
+  distinctMakes,
+  distinctModels,
+  yearRangeFor,
+  type VehicleFilter,
+} from "@/lib/vehicle-filter";
 
 const ALL_CATEGORIES = "Toutes";
 const ALL_BRANDS = "Toutes";
@@ -47,6 +54,12 @@ function CatalogueContent() {
   // Marque du fabricant (ex. Ferodo, Harden) — distinct de la compatibilité
   // véhicule ci-dessous (qui porte sur la marque du VÉHICULE, pas du produit).
   const [activeBrand, setActiveBrand] = useState<string>(ALL_BRANDS);
+  // Recherche "par véhicule" (marque/modèle/année du véhicule du client,
+  // distincte de activeBrand qui est la marque du FABRICANT de la pièce) —
+  // "" = pas de filtre à ce niveau, cf. lib/vehicle-filter.ts.
+  const [vehicleMake, setVehicleMake] = useState<string>("");
+  const [vehicleModel, setVehicleModel] = useState<string>("");
+  const [vehicleYear, setVehicleYear] = useState<string>("");
   const [searchTerm, setSearchTerm] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("default");
   const [isPending, setIsPending] = useState(false);
@@ -106,6 +119,9 @@ function CatalogueContent() {
     setActiveDepartmentSlug(slug);
     setActiveCategory(ALL_CATEGORIES);
     setActiveBrand(ALL_BRANDS);
+    setVehicleMake("");
+    setVehicleModel("");
+    setVehicleYear("");
     setIsPending(true);
   };
 
@@ -116,6 +132,24 @@ function CatalogueContent() {
 
   const handleBrandChange = (value: string) => {
     setActiveBrand(value || ALL_BRANDS);
+    setIsPending(true);
+  };
+
+  const handleVehicleMakeChange = (value: string) => {
+    setVehicleMake(value);
+    setVehicleModel("");
+    setVehicleYear("");
+    setIsPending(true);
+  };
+
+  const handleVehicleModelChange = (value: string) => {
+    setVehicleModel(value);
+    setVehicleYear("");
+    setIsPending(true);
+  };
+
+  const handleVehicleYearChange = (value: string) => {
+    setVehicleYear(value);
     setIsPending(true);
   };
 
@@ -148,6 +182,27 @@ function CatalogueContent() {
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b, "fr"));
   }, [departmentProducts]);
+
+  // Véhicules (marque/modèle/année) couverts par la compatibilité déjà
+  // connue des produits du rayon actif — alimente le bloc "Trouver par
+  // véhicule" ci-dessous. Vide en Quincaillerie (aucune ligne de
+  // compatibilité là-bas), ce qui masque naturellement le bloc.
+  const vehicleMakes = useMemo(() => distinctMakes(departmentProducts), [departmentProducts]);
+  const vehicleModels = useMemo(
+    () => (vehicleMake ? distinctModels(departmentProducts, vehicleMake) : []),
+    [departmentProducts, vehicleMake]
+  );
+  const vehicleYearRange = useMemo(
+    () => (vehicleMake ? yearRangeFor(departmentProducts, vehicleMake, vehicleModel || null) : null),
+    [departmentProducts, vehicleMake, vehicleModel]
+  );
+  const vehicleYearOptions = useMemo(() => {
+    if (!vehicleYearRange) return [];
+    const { min, max } = vehicleYearRange;
+    const years: number[] = [];
+    for (let y = max; y >= min; y--) years.push(y);
+    return years;
+  }, [vehicleYearRange]);
 
   // Duplicate category rows (e.g. two "Éclairage") collapse into one chip —
   // see lib/categories.ts. Scoped to the active department only.
@@ -188,13 +243,22 @@ function CatalogueContent() {
     const byBrand =
       activeBrand === ALL_BRANDS ? byCategory : byCategory.filter((p) => p.brand === activeBrand);
 
+    const vehicleFilter: VehicleFilter = {
+      make: vehicleMake || null,
+      model: vehicleModel || null,
+      year: vehicleYear ? Number(vehicleYear) : null,
+    };
+    const byVehicle = vehicleMake
+      ? byBrand.filter((p) => productMatchesVehicle(p, vehicleFilter))
+      : byBrand;
+
     const base = query
-      ? byBrand.filter((p) =>
+      ? byVehicle.filter((p) =>
           [p.name, p.reference, p.compatibility, p.description]
             .filter(Boolean)
             .some((field) => normalizeText(field as string).includes(query))
         )
-      : byBrand;
+      : byVehicle;
 
     const sorted = [...base];
     switch (sortKey) {
@@ -217,6 +281,9 @@ function CatalogueContent() {
     activeCategory,
     activeCategoryIds,
     activeBrand,
+    vehicleMake,
+    vehicleModel,
+    vehicleYear,
     sortKey,
     searchTerm,
   ]);
@@ -317,6 +384,77 @@ function CatalogueContent() {
               )}
             </div>
 
+            {/* TROUVER PAR VÉHICULE — marque/modèle/année du véhicule du
+                client, appuyé sur product_compatibility ; distinct du filtre
+                "Marque" plus bas qui porte sur le fabricant de la pièce. Ne
+                s'affiche que s'il y a des véhicules à proposer (jamais en
+                Quincaillerie). */}
+            {!isQuincaillerie && vehicleMakes.length > 0 && (
+              <div className="mb-5 rounded-xl border-2 border-tn-black bg-amber-50 p-4">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="text-xs font-black uppercase tracking-widest text-tn-black-soft/70">
+                    Trouver les pièces compatibles avec votre véhicule
+                  </h2>
+                  {(vehicleMake || vehicleModel || vehicleYear) && (
+                    <button
+                      type="button"
+                      onClick={() => handleVehicleMakeChange("")}
+                      className="text-[11px] font-black uppercase tracking-wide text-tn-black-soft/50 underline decoration-dotted underline-offset-2 transition-colors duration-200 hover:text-tn-red"
+                    >
+                      Réinitialiser
+                    </button>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  <select
+                    aria-label="Marque du véhicule"
+                    value={vehicleMake}
+                    onChange={(e) => handleVehicleMakeChange(e.target.value)}
+                    className="rounded-lg border-2 border-tn-black bg-tn-white px-3 py-2 text-xs font-black uppercase tracking-wide text-tn-black shadow-[2px_2px_0_0_var(--tn-black)] transition-all duration-200 ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:-translate-y-0.5 focus:-translate-y-0.5 focus:shadow-[4px_4px_0_0_var(--tn-red)] focus:outline-none"
+                  >
+                    <option value="">Marque du véhicule</option>
+                    {vehicleMakes.map((make) => (
+                      <option key={make} value={make}>
+                        {make}
+                      </option>
+                    ))}
+                  </select>
+
+                  {vehicleMake && vehicleModels.length > 0 && (
+                    <select
+                      aria-label="Modèle du véhicule"
+                      value={vehicleModel}
+                      onChange={(e) => handleVehicleModelChange(e.target.value)}
+                      className="rounded-lg border-2 border-tn-black bg-tn-white px-3 py-2 text-xs font-black uppercase tracking-wide text-tn-black shadow-[2px_2px_0_0_var(--tn-black)] transition-all duration-200 ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:-translate-y-0.5 focus:-translate-y-0.5 focus:shadow-[4px_4px_0_0_var(--tn-red)] focus:outline-none"
+                    >
+                      <option value="">Tous les modèles</option>
+                      {vehicleModels.map((model) => (
+                        <option key={model} value={model}>
+                          {model}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+
+                  {vehicleMake && vehicleYearOptions.length > 0 && (
+                    <select
+                      aria-label="Année du véhicule"
+                      value={vehicleYear}
+                      onChange={(e) => handleVehicleYearChange(e.target.value)}
+                      className="rounded-lg border-2 border-tn-black bg-tn-white px-3 py-2 text-xs font-black uppercase tracking-wide text-tn-black shadow-[2px_2px_0_0_var(--tn-black)] transition-all duration-200 ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:-translate-y-0.5 focus:-translate-y-0.5 focus:shadow-[4px_4px_0_0_var(--tn-red)] focus:outline-none"
+                    >
+                      <option value="">Toutes les années</option>
+                      {vehicleYearOptions.map((year) => (
+                        <option key={year} value={year}>
+                          {year}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div className="flex flex-wrap items-center justify-between gap-4">
               <h2 className="text-xs font-black uppercase tracking-widest text-tn-black-soft/60">
                 Filtrer par catégorie
@@ -407,6 +545,15 @@ function CatalogueContent() {
                 <>
                   {" "}
                   · marque <span className="text-tn-red">{activeBrand}</span>
+                </>
+              )}
+              {vehicleMake && (
+                <>
+                  {" "}
+                  · véhicule{" "}
+                  <span className="text-tn-red">
+                    {[vehicleMake, vehicleModel, vehicleYear].filter(Boolean).join(" ")}
+                  </span>
                 </>
               )}
               {activeDepartment && !searchTerm.trim() && (

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { CartProvider } from "@/components/CartContext";
 import { CartToast } from "@/components/CartToast";
+import { ChatWidget } from "@/components/ChatWidget";
 
 export const metadata: Metadata = {
   title: "Jiboo — Pièces détachées auto en Tunisie",
@@ -16,6 +17,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <CartProvider>
           {children}
           <CartToast />
+          <ChatWidget />
         </CartProvider>
       </body>
     </html>
