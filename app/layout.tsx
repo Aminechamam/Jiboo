@@ -5,7 +5,7 @@ import { CartToast } from "@/components/CartToast";
 import { ChatWidget } from "@/components/ChatWidget";
 
 export const metadata: Metadata = {
-  title: "Jiboo — Pièces détachées auto en Tunisie",
+  title: "Jiboo, Pièces détachées auto en Tunisie",
   description:
     "Jiboo : pièces détachées automobiles certifiées, livraison rapide partout en Tunisie, paiement à la livraison.",
 };

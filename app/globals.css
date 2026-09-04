@@ -40,7 +40,7 @@ body {
   clip-path: polygon(0 3vw, 100% 0, 100% calc(100% - 3vw), 0 100%);
 }
 
-/* Racing stripe accent strip — pure CSS repeating diagonal stripes */
+/* Racing stripe accent strip, pure CSS repeating diagonal stripes */
 .tn-stripes {
   background-image: repeating-linear-gradient(
     -45deg,
@@ -78,7 +78,7 @@ body {
   backface-visibility: hidden;
 }
 
-/* Entrance keyframes — used with the Tailwind `motion-safe:` variant so
+/* Entrance keyframes, used with the Tailwind `motion-safe:` variant so
    prefers-reduced-motion users simply get the final state with no animation. */
 @keyframes tn-rise-in {
   from {
@@ -102,7 +102,7 @@ body {
   }
 }
 
-/* Quick confirmation pulse — played once on the "Ajouter au panier" button
+/* Quick confirmation pulse, played once on the "Ajouter au panier" button
    when an item is added, reusing the same bouncy spring curve as the
    catalogue's filter chips/sort dropdown. */
 @keyframes tn-add-bump {
@@ -117,7 +117,7 @@ body {
   }
 }
 
-/* Cart toast — slides up from the bottom, holds, then the component unmounts
+/* Cart toast, slides up from the bottom, holds, then the component unmounts
    it (see CartToast.tsx). Mirrors the bouncy spring curve used elsewhere. */
 @keyframes tn-toast-in {
   from {

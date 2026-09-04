@@ -5,7 +5,7 @@ import { useCart } from "./CartContext";
 /**
  * Fixed-position confirmation toast shown whenever `showToast` fires from
  * CartContext (product cards / product detail "Ajouter au panier"). Exists
- * because the cart-count badge alone is easy to miss — this gives an
+ * because the cart-count badge alone is easy to miss, this gives an
  * unmissable, self-dismissing confirmation regardless of where on the page
  * the click happened.
  */
@@ -15,7 +15,7 @@ export function CartToast() {
   if (!toastMessage) return null;
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex justify-center px-4 sm:bottom-6 sm:justify-end sm:pr-6">
+    <div className="pointer-events-none fixed inset-x-0 bottom-24 z-50 flex justify-center px-4 sm:bottom-28 sm:justify-end sm:pr-6">
       <div
         role="status"
         aria-live="polite"

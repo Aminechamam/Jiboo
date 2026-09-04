@@ -36,18 +36,40 @@ type ProductCard = {
   url: string;
 };
 
-const SYSTEM_PROMPT = `Tu es l'assistant de jiboo.tn, un site tunisien de vente de pièces détachées automobiles (rayon "Pièces Auto") et de quincaillerie/outillage (rayon "Quincaillerie", marque Harden notamment). Tu réponds toujours en français, de façon concise et directe.
+const SYSTEM_PROMPT = `Tu es l'assistant de jiboo.tn, un site tunisien de vente de pièces détachées automobiles (rayon "Pièces Auto") et de quincaillerie/outillage (rayon "Quincaillerie", marque Harden notamment). Tu réponds toujours en français.
+
+Format de réponse, important : reste bref et clair. Phrases courtes, pas de blabla ni de longue introduction. 3-4 phrases suffisent la plupart du temps. Si tu dois lister plusieurs points (étapes, causes possibles), utilise des tirets courts plutôt qu'un paragraphe dense. L'utilisateur lit ça dans une petite fenêtre de chat, un pavé de texte est illisible.
 
 Ton rôle :
-1. Aider un client à trouver une pièce ou un outil dans le catalogue jiboo.tn. Utilise l'outil search_products dès que tu as assez d'informations (type de pièce recherché, et pour une pièce auto idéalement la marque/modèle/année du véhicule) plutôt que d'inventer un produit, un prix ou une référence — tu n'as connaissance du catalogue QUE via cet outil. Si l'outil ne renvoie rien, dis-le clairement et propose de préciser la recherche, ne prétends jamais qu'un produit existe si tu ne l'as pas vu dans un résultat d'outil.
-2. Répondre à des questions générales de diagnostic automobile (bruits, pannes, symptômes). Tu peux donner des pistes plausibles, mais reste prudent : précise que ce n'est qu'une orientation et qu'un mécanicien doit confirmer le diagnostic avant toute intervention, surtout pour tout ce qui touche au freinage ou à la sécurité. N'invente jamais de référence pièce précise pour "confirmer" un diagnostic — pour ça, dirige vers une recherche de produit une fois le diagnostic plus clair.
+1. Aider un client à trouver une pièce ou un outil dans le catalogue jiboo.tn. Utilise l'outil search_products dès que tu as assez d'informations (type de pièce recherché, et pour une pièce auto idéalement la marque/modèle/année du véhicule) plutôt que d'inventer un produit, un prix ou une référence : tu n'as connaissance du catalogue QUE via cet outil. Si l'outil ne renvoie rien, dis-le clairement et propose de préciser la recherche, ne prétends jamais qu'un produit existe si tu ne l'as pas vu dans un résultat d'outil.
+2. Répondre à des questions générales de diagnostic automobile (bruits, pannes, symptômes). Tu peux donner des pistes plausibles, mais reste prudent : précise que ce n'est qu'une orientation et qu'un mécanicien doit confirmer le diagnostic avant toute intervention, surtout pour tout ce qui touche au freinage ou à la sécurité. Dès que tu identifies une ou deux pièces plausibles (ex. courroie de distribution, pompe à eau pour un moteur qui chauffe), appelle immédiatement search_products pour ces pièces, en plus de ta réponse texte, pour que les produits correspondants s'affichent tout de suite plutôt que d'attendre que l'utilisateur redemande. Reste sur 1-2 pistes principales, pas une recherche pour chaque cause possible. N'invente jamais de référence pièce précise pour "confirmer" un diagnostic : c'est justement le rôle de search_products.
 
-Le prix affiché est toujours en dinars tunisiens (DT). Ne donne jamais de prix, référence ou lien produit que ne vient pas directement d'un résultat de search_products.`;
+Règle stricte sur le véhicule : n'invente et ne suppose JAMAIS une marque ou un modèle de véhicule. Ne dis jamais "pour une Mercedes-Benz" ou toute autre marque si le client ne l'a pas donnée lui-même (texte tapé, ou sélecteur véhicule décrit plus bas). Si tu ne connais pas le véhicule et que ça t'aiderait pour chercher un produit compatible, dis-le simplement et invite le client à choisir sa voiture dans le sélecteur affiché au-dessus du champ de message, ne lui demande pas de le taper. Tu peux quand même chercher et lister des pièces sans véhicule précisé (le client verra alors des résultats non filtrés par compatibilité).
+
+Le prix affiché est toujours en dinars tunisiens (DT). Ne donne jamais de prix, référence ou lien produit qui ne vient pas directement d'un résultat de search_products.`;
+
+type VehicleContext = { make: string; model: string | null };
+
+/** Ajoute au prompt système la vérité terrain sur le véhicule quand elle
+ *  existe (choisie par le client via le sélecteur de ChatWidget.tsx, jamais
+ *  tapée en texte libre), ou rappelle explicitement au modèle qu'il n'a
+ *  aucun véhicule fiable pour l'instant. Sans ce rappel systématique, le
+ *  modèle a tendance à réutiliser les exemples de marques du schéma de
+ *  l'outil (voir SEARCH_PRODUCTS_TOOL) comme si c'était une vraie donnée
+ *  client. */
+function buildSystemPrompt(vehicle: VehicleContext | null): string {
+  const vehicleNote = vehicle
+    ? `\n\nVéhicule du client, choisi de façon fiable via le sélecteur (ce n'est pas une supposition) : ${vehicle.make}${
+        vehicle.model ? " " + vehicle.model : ""
+      }. Utilise-le directement dans search_products (champs make/model) sans le redemander.`
+    : `\n\nAucun véhicule n'est renseigné pour l'instant, le sélecteur au-dessus du champ de message est vide.`;
+  return SYSTEM_PROMPT + vehicleNote;
+}
 
 const SEARCH_PRODUCTS_TOOL = {
   name: "search_products",
   description:
-    "Cherche des produits dans le catalogue jiboo.tn (pièces auto ou quincaillerie) par mots-clés, et optionnellement par véhicule (marque/modèle/année) pour une pièce auto. Renvoie jusqu'à 5 produits réels avec prix, référence et disponibilité. À utiliser dès qu'on a assez d'informations pour chercher plutôt que de deviner.",
+    "Cherche des produits dans le catalogue jiboo.tn (pièces auto ou quincaillerie) par mots-clés, et optionnellement par véhicule (marque/modèle) pour une pièce auto. Renvoie jusqu'à 5 produits réels avec prix, référence et disponibilité. N'utilise make/model QUE si le client les a donnés (texte ou sélecteur) : ne les devine jamais et n'utilise jamais un exemple de ce schéma comme une vraie valeur.",
   input_schema: {
     type: "object" as const,
     properties: {
@@ -58,11 +80,13 @@ const SEARCH_PRODUCTS_TOOL = {
       },
       make: {
         type: "string",
-        description: "Marque du véhicule si mentionnée, ex. 'Mercedes-Benz', 'BMW'.",
+        description:
+          "Marque du véhicule, uniquement si le client l'a explicitement donnée (texte tapé ou sélecteur). Ne jamais inventer ou supposer une marque.",
       },
       model: {
         type: "string",
-        description: "Modèle du véhicule si mentionné, ex. 'Classe C', 'Série 3'.",
+        description:
+          "Modèle du véhicule, uniquement si le client l'a explicitement donné (texte tapé ou sélecteur). Ne jamais inventer ou supposer un modèle.",
       },
       year: {
         type: "number",
@@ -146,6 +170,7 @@ type AnthropicResponse = {
 async function callAnthropic(
   apiKey: string,
   model: string,
+  system: string,
   messages: { role: "user" | "assistant"; content: AnthropicContentBlock[] | string }[]
 ): Promise<AnthropicResponse> {
   const res = await fetch(ANTHROPIC_API_URL, {
@@ -158,7 +183,7 @@ async function callAnthropic(
     body: JSON.stringify({
       model,
       max_tokens: MAX_TOKENS,
-      system: SYSTEM_PROMPT,
+      system,
       tools: [SEARCH_PRODUCTS_TOOL],
       messages,
     }),
@@ -181,11 +206,28 @@ export async function POST(req: Request) {
     );
   }
 
-  let body: { messages?: ChatMessage[] };
+  let body: { messages?: ChatMessage[]; vehicle?: unknown };
   try {
     body = await req.json();
   } catch {
     return Response.json({ error: "Requête invalide." }, { status: 400 });
+  }
+
+  // Le véhicule vient exclusivement du sélecteur de ChatWidget.tsx (deux
+  // <select> alimentés par /api/vehicles), jamais d'un champ texte libre :
+  // c'est une donnée fiable, pas une supposition du modèle.
+  let vehicle: VehicleContext | null = null;
+  if (
+    body.vehicle &&
+    typeof body.vehicle === "object" &&
+    typeof (body.vehicle as { make?: unknown }).make === "string" &&
+    (body.vehicle as { make: string }).make.trim().length > 0
+  ) {
+    const raw = body.vehicle as { make: string; model?: unknown };
+    vehicle = {
+      make: raw.make.trim().slice(0, 80),
+      model: typeof raw.model === "string" && raw.model.trim().length > 0 ? raw.model.trim().slice(0, 80) : null,
+    };
   }
 
   const incoming = Array.isArray(body.messages) ? body.messages : [];
@@ -205,8 +247,9 @@ export async function POST(req: Request) {
   }
 
   const model = process.env.ANTHROPIC_MODEL || DEFAULT_MODEL;
+  const system = buildSystemPrompt(vehicle);
 
-  // Historique au format Anthropic — content commence en string simple, et
+  // Historique au format Anthropic, content commence en string simple, et
   // peut ensuite contenir des blocs tool_use / tool_result une fois qu'on
   // entre dans la boucle d'appel d'outil ci-dessous.
   const conversation: { role: "user" | "assistant"; content: AnthropicContentBlock[] | string }[] =
@@ -217,7 +260,7 @@ export async function POST(req: Request) {
 
   try {
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-      const response = await callAnthropic(apiKey, model, conversation);
+      const response = await callAnthropic(apiKey, model, system, conversation);
 
       const toolUses = response.content.filter(
         (b): b is Extract<AnthropicContentBlock, { type: "tool_use" }> => b.type === "tool_use"
